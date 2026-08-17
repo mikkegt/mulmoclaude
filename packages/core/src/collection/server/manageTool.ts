@@ -99,7 +99,7 @@ export const MAX_PUT_LINT = 10;
  *  next reader of these rows is stricter than the write was. */
 const PUT_LINT_NOTE =
   "These rows WERE written. The write gate refuses only what makes a record unopenable (required fields, enum values, primaryKey = record id) — it does not check the SHAPE of a value, so a wrong-shaped one is reported here rather than rejected. " +
-  "`getItems` reports the same findings, and publishing a shared app REFUSES exactly these rows. Fix the generator and rewrite them before writing the rest of the set.";
+  "`getItems` surfaces the same finding as a `warning` (on a full listing, or when a requested id is missing), and publishing a shared app REFUSES the row outright. Fix the generator and rewrite them before writing the rest of the set.";
 /** Refuse an `itemsFile` larger than this, from `stat` and before any read.
  *  The row cap alone cannot bound the work: the file has to be read and parsed
  *  WHOLE before there are rows to count, so a huge blob is paid for in full
@@ -318,9 +318,25 @@ function computedKeyProblem(record: CollectionItem, schema: CollectionSchema): s
   return null;
 }
 
-interface RejectedRow {
+/** One row the call did not take, or took and flagged: the id it was about and
+ *  what to fix. Exported alongside `PutItemsLint`, whose `rows` are these. */
+export interface RejectedRow {
   id: string;
   problem: string;
+}
+
+/** The `lint` block of a putItems result — the strict-tier findings on rows the
+ *  call WROTE. Exported because it is part of the tool's answer, not an
+ *  internal: a caller (or a test) that re-declares the shape inline is a copy
+ *  that stops matching the day the block gains a field. */
+export interface PutItemsLint {
+  /** Every flagged row, not just the shown ones — a capped `rows` must never be
+   *  readable as a total. */
+  total: number;
+  /** What the reader has to know to act on findings sitting beside `written`. */
+  note: string;
+  /** The first `MAX_PUT_LINT` findings. */
+  rows: RejectedRow[];
 }
 
 /** `mode: "merge"` resolves the row against the EXISTING record —
@@ -622,7 +638,7 @@ async function resolvePutRows(args: PutItemsArgs, deps: ManageCollectionDeps): P
  *
  *  `total` counts every flagged row and `rows` shows the first
  *  `MAX_PUT_LINT` of them, so a capped report can never be read as a total. */
-function lintReport(lint: RejectedRow[]): { lint?: { total: number; note: string; rows: RejectedRow[] } } {
+function lintReport(lint: RejectedRow[]): { lint?: PutItemsLint } {
   if (lint.length === 0) return {};
   return { lint: { total: lint.length, note: PUT_LINT_NOTE, rows: lint.slice(0, MAX_PUT_LINT) } };
 }
@@ -913,7 +929,7 @@ const MANAGE_COLLECTION_PROMPT =
   "`getItems` is the only way to see computed values — `derived` fields (e.g. a portfolio's value), `toggle` projections, and `embed` records are host-computed and never present in the stored JSON files. On large collections pass `ids` and/or `fields` to keep the result small. " +
   'For a question that spans collections ("which clients have unpaid invoices?"), start with `getOntology`: it lists every collection with its primaryKey, record count, and outbound `ref`/`embed` relations, so you know which collections to join before reading any records. ' +
   "`putItems` GATES every row on what would make the record unopenable — required fields, enum values, primaryKey = record id — and returns `{ written, rejected }`; fix each rejected row using its `problem` text and retry just those rows. Never include computed fields in a row you write. " +
-  "That gate does NOT check the SHAPE of a value: a `datetime` carrying a `Z` suffix, a `number` holding a string, a `date` that is not a real day are all WRITTEN, and come back in a `lint` block beside `written`. Read it — `getItems` reports the same findings and publishing a shared app refuses exactly those rows, so a silent `lint` is the only proof the values are right. " +
+  "That gate does NOT check the SHAPE of a value: a `datetime` carrying a `Z` suffix, a `number` holding a string, a `date` that is not a real day are all WRITTEN, and come back in a `lint` block beside `written`. Read it — a full `getItems` listing warns about the same rows and publishing a shared app REFUSES them, so a silent `lint` is the only proof the values are right. " +
   'Before generating a large set, read the exact stored form of each type in the `Field types` section of `schemaDocs` (`topic: "Field types"` fetches just that one), then write ONE batch and check that `lint` is absent. `datetime` in particular is a local wall clock (`YYYY-MM-DDTHH:MM`, no timezone suffix), so `new Date(...).toISOString()` is wrong twice over — the suffix, and the hours the conversion moved. ' +
   "When the rows come from a script rather than from you (a generated schedule, an imported set, anything past a few dozen records), write them to a JSON file UNDER THE WORKSPACE and pass its absolute path as `itemsFile` instead of `items` — the host reads the file, so the rows never pass through your context. Do NOT hand-transcribe a generated file into `items`, and never drive the collection by spawning the MCP bridge yourself. " +
   'To update a few fields of an existing record, use `mode: "merge"` with a partial row ({ id, <changed fields> }) — the default upsert replaces the WHOLE record, so a partial upsert would silently erase every optional field it omits. ' +

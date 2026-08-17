@@ -41,8 +41,8 @@ strict tier exists NOT to do. What changed is that the call now says so:
   ten samples say what a thousand would — with `lint.total` reporting the true
   count, so a capped list can never be read as a total.
 - `lint.note` says what the reader has to know to act: the rows WERE written,
-  the gate does not check value shapes, and `getItems` and a shared-app publish
-  both refuse exactly these rows.
+  the gate does not check value shapes, a full `getItems` listing warns about
+  the same rows, and a shared app's publish refuses them outright.
 - The key is ABSENT when every written row is clean, so a clean call reads
   exactly as it always did.
 - Findings are computed on the record as WRITTEN (post-default, post-merge) —

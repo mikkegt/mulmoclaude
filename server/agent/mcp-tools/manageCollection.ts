@@ -26,6 +26,8 @@ export {
   MAX_PUT_LINT,
   MAX_ITEMS_FILE_BYTES,
   type ManageCollectionDeps,
+  type PutItemsLint,
+  type RejectedRow,
 } from "@mulmoclaude/core/collection/server";
 
 /** Best-effort post-write refresh. Discovery re-reads schema.json from

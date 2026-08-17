@@ -199,9 +199,9 @@ Every field spec needs a `type` and a `label`. Extra keys by type:
   morning wherever the records are read, which is what a schedule means and what
   the calendar can place. So a generated value must be FORMATTED, never
   converted — `new Date(...).toISOString()` is wrong twice over: it appends the
-  `Z` (`putItems` writes the row but lints it, and `getItems` and a shared-app
-  publish both refuse it), and it shifts the hours by the generating machine's
-  offset, so a Tokyo 08:00 written on a US laptop reads back as the afternoon.
+  `Z` (`putItems` writes the row but reports it in `lint`, a full `getItems`
+  listing warns about it, and a shared app's publish refuses it outright), and
+  it shifts the hours by the generating machine's offset, so a Tokyo 08:00 written on a US laptop reads back as the afternoon.
   Build the string from the parts you already have (`${date}T${hh}:${mm}`). The
   one `Z`-suffixed datetime that is legal is a shared app's server-stamped
   field, and the SERVER writes that one — never you.

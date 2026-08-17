@@ -20,6 +20,7 @@ import {
   MAX_PUT_ITEMS,
   MAX_PUT_LINT,
   MAX_ITEMS_FILE_BYTES,
+  type PutItemsLint,
 } from "../../server/agent/mcp-tools/manageCollection.js";
 import { mcpTools } from "../../server/agent/mcp-tools/index.js";
 
@@ -379,7 +380,7 @@ describe("manageCollection — putItems lint", () => {
     assert.deepEqual(result.written, ["s1"], "the row is written — the strict tier reports, it does not refuse");
     assert.deepEqual(result.rejected, []);
     assert.ok(existsSync(path.join(workdir, "data/slots/items/s1.json")));
-    const lint = result.lint as { total: number; note: string; rows: { id: string; problem: string }[] };
+    const lint = result.lint as PutItemsLint;
     assert.equal(lint.total, 1);
     assert.equal(lint.rows[0]?.id, "s1");
     assert.match(lint.rows[0]?.problem ?? "", /not a YYYY-MM-DDTHH:MM datetime/);
@@ -396,7 +397,7 @@ describe("manageCollection — putItems lint", () => {
   it("reports the true total while showing only the first rows", async () => {
     const rows = Array.from({ length: MAX_PUT_LINT + 2 }, (unused, index) => slot(`s${index}`, "2026-08-17T15:00:00.000Z"));
     const result = await runJson({ action: "putItems", slug: "slots", items: rows });
-    const lint = result.lint as { total: number; rows: unknown[] };
+    const lint = result.lint as PutItemsLint;
     assert.equal((result.written as string[]).length, MAX_PUT_LINT + 2);
     assert.equal(lint.total, MAX_PUT_LINT + 2, "a capped list must never be readable as a total");
     assert.equal(lint.rows.length, MAX_PUT_LINT);
@@ -410,7 +411,7 @@ describe("manageCollection — putItems lint", () => {
     });
     assert.deepEqual(result.written, ["s1"]);
     assert.equal((result.rejected as unknown[]).length, 1);
-    const lint = result.lint as { total: number; rows: { id: string }[] };
+    const lint = result.lint as PutItemsLint;
     assert.equal(lint.total, 1);
     assert.equal(lint.rows[0]?.id, "s1");
   });
@@ -419,7 +420,7 @@ describe("manageCollection — putItems lint", () => {
     writeRecord("data/slots/items", "s1", slot("s1", "2026-08-17T15:00:00.000Z"));
     const result = await runJson({ action: "putItems", slug: "slots", items: [{ id: "s1", note: "held" }], mode: "merge" });
     assert.deepEqual(result.written, ["s1"]);
-    const lint = result.lint as { rows: { problem: string }[] };
+    const lint = result.lint as PutItemsLint;
     assert.match(lint.rows[0]?.problem ?? "", /not a YYYY-MM-DDTHH:MM datetime/, "the merged result is what a later read will lint");
   });
 
