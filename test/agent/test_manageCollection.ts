@@ -413,6 +413,20 @@ describe("manageCollection — putItems lint", () => {
     assert.match((bad.lint as PutItemsLint).rows[0]?.problem ?? "", /is not numeric/);
   });
 
+  // The strict tier accepts exactly one `Z`-suffixed datetime: the instant a
+  // shared app's server stamps, at nine fractional digits. `toISOString()`'s
+  // three digits are NOT that shape — which is the whole reason the seeded app
+  // in mulmoterminal#1763 was refused at publish. Both halves pinned, because
+  // the prompt now draws the line between them (codex on #2925).
+  it("accepts a server-stamped instant and still reports toISOString's", async () => {
+    const stamped = await runJson({ action: "putItems", slug: "slots", items: [slot("s1", "2026-08-15T01:45:54.605987654Z")] });
+    assert.deepEqual(stamped.written, ["s1"]);
+    assert.equal("lint" in stamped, false, "nine fractional digits is the canonical server instant");
+    const converted = await runJson({ action: "putItems", slug: "slots", items: [slot("s2", "2026-08-15T01:45:54.605Z")] });
+    assert.deepEqual(converted.written, ["s2"]);
+    assert.match((converted.lint as PutItemsLint).rows[0]?.problem ?? "", /not a YYYY-MM-DDTHH:MM datetime/);
+  });
+
   it("has no lint key at all when every written row fits its types", async () => {
     const result = await runJson({ action: "putItems", slug: "slots", items: [slot("s1", "2026-08-17T08:00")] });
     assert.deepEqual(result.written, ["s1"]);

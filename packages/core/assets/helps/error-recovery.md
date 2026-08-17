@@ -1117,8 +1117,10 @@ the calendar can place. So format the string, never convert it:
 The conversion is the more expensive half: had the format passed, a Tokyo court's
 08:00 seeded on a US laptop would have published every slot seven hours out
 (eight, on the dates the other side of a DST change) with nothing to point at.
-The one `Z`-suffixed datetime that is legal is a shared app's server-stamped
-field, and the server writes that one, not you.
+The one `Z`-suffixed datetime the strict tier accepts is a shared app's
+server-stamped instant — nine fractional digits
+(`2026-08-15T01:45:54.605987654Z`), written by the server, not by you.
+`toISOString()`'s three digits are not that shape and are linted.
 
 Field-by-field stored forms: `schemaDocs` with `topic: "Field types"`.
 

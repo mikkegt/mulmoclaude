@@ -204,7 +204,8 @@ Every field spec needs a `type` and a `label`. Extra keys by type:
   it shifts the hours by the generating machine's offset, so a Tokyo 08:00 written on a US laptop reads back as the afternoon.
   Build the string from the parts you already have (`${date}T${hh}:${mm}`). The
   one `Z`-suffixed datetime that is legal is a shared app's server-stamped
-  field, and the SERVER writes that one — never you.
+  field — nine fractional digits, written by the SERVER, never by you. Anything
+  else ending in `Z` (including `toISOString()`'s three digits) is linted.
   Use it (as `calendarField` / `calendarEndField`) when an event has a real
   start/end clock — the calendar's day view then draws each record as a
   proportional time block. For the common "date column + separate time column"
