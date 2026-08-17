@@ -385,7 +385,7 @@ describe("manageCollection — putItems lint", () => {
     assert.equal(lint.rows[0]?.id, "s1");
     assert.match(lint.rows[0]?.problem ?? "", /not a YYYY-MM-DDTHH:MM datetime/);
     assert.match(lint.note, /WERE written/);
-    assert.match(lint.note, /REFUSES exactly these rows/);
+    assert.match(lint.note, /publishing a shared app REFUSES the row/);
   });
 
   it("has no lint key at all when every written row fits its types", async () => {
