@@ -18,7 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 Record validation has had two tiers since the ontology work. The **enforced**
 tier is the write gate — required fields, enum values, `primaryKey` = record id,
 the things that make a record unopenable. The **strict** tier adds the per-type
-checks (a `number` holds a number, a `date` is a real day, a `datetime` is the
+checks (a `number` holds something numeric, a `date` is a real day, a `datetime` is the
 civil `YYYY-MM-DDTHH:MM` shape the calendar can place) and is deliberately
 report-only, so a collection whose rows predate the typed rules stays writable.
 `getItems` reports it and `presentCollection` reports it. `putItems` did not —
@@ -138,7 +138,6 @@ Firestore read — it never goes through this store — and MulmoTerminal
 (receptron/mulmoterminal#1747) carries the template and skill text plus the
 ranking regression test. Design: mulmoterminal `plans/fix-shared-app-server-time.md`.
 
-
 #### `@mulmoclaude/core@4.1.0` on npm is not the 4.1.0 in this tree — republished as 4.1.1
 
 npm's 4.1.0 was published at 2026-08-14 18:56 UTC. PR #2915 merged at 23:16 UTC
@@ -249,6 +248,7 @@ Everything else is unchanged: same per-row schema validation, same `mode`, same
 `{ written, rejected }`. `collection-skills.md` documents the file route and
 `error-recovery.md` names the bridge-spawning workaround so the agent meets the
 answer before it improvises one.
+
 #### An `enum` field can declare the value a new record starts on (#2839)
 
 ```jsonc
@@ -522,7 +522,6 @@ alphanumerics separated by single hyphens — because it is BOTH a URL path
 segment people retype and a Firestore document id, and a case rule would make
 one name for a person and two reservations for Firestore.
 
-
 #### A row-scoped writer (`assignee`), and the two keys a first-come queue needs
 
 Three additions to the shared-app declaration, all of them paired with rules in
@@ -561,7 +560,6 @@ working for everybody else), a `stampField` outside `createFields` (which
 refuses every submission), and a `fromField` naming an unknown collection or a
 field the submission never writes (which shuts the window for good). A member's
 per-collection keys also joined the unknown-cid sweep.
-
 
 #### One booking per slot: a document id that is a CLAIM about another record
 

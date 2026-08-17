@@ -371,6 +371,7 @@ describe("manageCollection — putItems lint", () => {
         id: { type: "string", label: "ID", primary: true, required: true },
         startAt: { type: "datetime", label: "Start" },
         day: { type: "date", label: "Day" },
+        price: { type: "number", label: "Price" },
         note: { type: "string", label: "Note" },
       },
     });
@@ -397,6 +398,19 @@ describe("manageCollection — putItems lint", () => {
     assert.deepEqual(result.rejected, []);
     const lint = result.lint as PutItemsLint;
     assert.match(lint.rows[0]?.problem ?? "", /not a real YYYY-MM-DD date/);
+  });
+
+  // What "numeric" means is `coerceNumeric`, shared with rollup sums — so a
+  // stored "42" is a number to every reader and must NOT be linted, while text
+  // that is not a number at all must be. Pinned because the tool prompt names
+  // this case, and the two have to say the same thing (codex on #2925).
+  it("accepts a numeric string in a number field, and reports one that is not a number", async () => {
+    const clean = await runJson({ action: "putItems", slug: "slots", items: [{ id: "s1", price: "42" }] });
+    assert.deepEqual(clean.written, ["s1"]);
+    assert.equal("lint" in clean, false);
+    const bad = await runJson({ action: "putItems", slug: "slots", items: [{ id: "s2", price: "free" }] });
+    assert.deepEqual(bad.written, ["s2"]);
+    assert.match((bad.lint as PutItemsLint).rows[0]?.problem ?? "", /is not numeric/);
   });
 
   it("has no lint key at all when every written row fits its types", async () => {
