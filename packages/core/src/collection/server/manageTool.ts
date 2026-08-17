@@ -96,7 +96,14 @@ export const MAX_PUT_ITEMS = 1000;
 export const MAX_PUT_LINT = 10;
 /** What the `lint` block SAYS, once per call. A bare list of findings on rows the
  *  call also reports as `written` reads as noise; the reason to act is that the
- *  next reader of these rows is stricter than the write was. */
+ *  next reader of these rows is stricter than the write was.
+ *
+ *  Like everything else the tool says about validation, this describes the tool
+ *  with its gate ON. Under `ablateValidation` nothing is checked — `rejected`
+ *  stays empty too — and the caveat is deliberately NOT written into the
+ *  agent-facing text: ablation exists to measure what a model does without the
+ *  guardrails, and a model told "unless ablation is on" is no longer without
+ *  them (CodeRabbit on #2925). */
 const PUT_LINT_NOTE =
   "These rows WERE written. The write gate refuses what would make a record unopenable — a missing required field, a value outside an enum, a mismatched primaryKey, a computed key, a colliding id under `create` — but it does not check the SHAPE of a value, so a wrong-shaped one is reported here rather than rejected. " +
   "`getItems` surfaces the same finding as a `warning` (on a full listing, or when a requested id is missing), and publishing a shared app REFUSES the row outright. Fix the generator and rewrite them before writing the rest of the set.";
