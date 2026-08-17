@@ -10,10 +10,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ### Added
 
-#### `putItems` reports the value shapes it does not refuse (mulmoterminal#1763)
+#### `@mulmoclaude/core@4.3.0` — `putItems` reports the value shapes it does not refuse (mulmoterminal#1763)
 
-`manageCollection` `putItems` gains a **`lint`** block beside `written` and
-`rejected`: the strict-tier findings on the rows it just wrote.
+Released 2026-08-17. `manageCollection` `putItems` gains a **`lint`** block beside
+`written` and `rejected`: the strict-tier findings on the rows it just wrote.
+
+Only `core`'s version and the launcher's DEP RANGE move. The plugins keep their
+declared ranges — a `^4.x` caret floats across minors, so they resolve 4.3.0 on
+their own, and ratcheting them here would force a publish cascade for a change
+none of them calls (the same reasoning as 4.1.1). The launcher's OWN version
+stays 1.13.2, which `/publish-mulmoclaude` owns.
 
 Record validation has had two tiers since the ontology work. The **enforced**
 tier is the write gate — required fields, enum values, `primaryKey` = record id,
@@ -167,7 +173,7 @@ translation behind it.
 
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.2.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@3.0.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@3.0.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 
