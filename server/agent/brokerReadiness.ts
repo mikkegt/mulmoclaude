@@ -37,6 +37,11 @@ interface SessionReadiness {
   /** The broker the host is currently waiting on. A beacon carrying anything
    *  else belongs to an attempt that has already been replaced. */
   spawnId: string;
+  /** The process said it exists, before loading anything (#2842's start
+   *  beacon). Separate from `ready` because the gap between the two IS the cold
+   *  boot: "started but not ready" is a broker worth waiting for, while
+   *  "neither" is one that never launched. */
+  started: boolean;
   ready: BrokerReady | null;
 }
 
@@ -55,6 +60,23 @@ export function recordBrokerReady(sessionId: string, spawnId: string, ready: Bro
   if (current === undefined || current.spawnId !== spawnId) return false;
   current.ready = ready;
   return true;
+}
+
+/** Record the start beacon, unless it belongs to a superseded broker. Same
+ *  spawn-id gate as `recordBrokerReady`, for the same reason: a straggler from
+ *  the attempt that just failed must not vouch for the one replacing it. */
+export function recordBrokerStarting(sessionId: string, spawnId: string): boolean {
+  const current = readinessBySession.get(sessionId);
+  if (current === undefined || current.spawnId !== spawnId) return false;
+  current.started = true;
+  return true;
+}
+
+/** Whether THIS spawn's broker process ever announced itself. `false` after the
+ *  start beacon's own delivery budget has elapsed means the process is not
+ *  running — nothing had to load for it to answer. */
+export function getBrokerStarted(sessionId: string): boolean {
+  return readinessBySession.get(sessionId)?.started === true;
 }
 
 /** `null` means no beacon arrived for the CURRENT spawn — either the broker
@@ -78,7 +100,7 @@ export function getBrokerReady(sessionId: string): BrokerReady | null {
  *  spawned command disagree. */
 export function beginBrokerSpawn(sessionId: string, spawnId: string, kind: BrokerReady["kind"] | null): BrokerReady["kind"] | "none" {
   readinessBySession.delete(sessionId);
-  readinessBySession.set(sessionId, { spawnId, ready: null });
+  readinessBySession.set(sessionId, { spawnId, started: false, ready: null });
   // Insertion order is oldest-first, so the first key is the one to drop.
   const oldest = readinessBySession.keys().next();
   if (readinessBySession.size > MAX_TRACKED_SESSIONS && !oldest.done) {

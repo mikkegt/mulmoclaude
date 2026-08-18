@@ -202,6 +202,10 @@ const HOST_API_ROUTES = {
    *  indistinguishable from the host side. */
   mcp: {
     brokerReady: "/api/mcp/broker-ready",
+    /** Fired from an `--import` preload before the broker loads anything, so
+     *  it says "the process exists" without waiting for the cold boot. The
+     *  host stops a turn whose broker never sends it. */
+    brokerStarting: "/api/mcp/broker-starting",
   },
 
   mcpTools: {

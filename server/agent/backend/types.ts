@@ -36,6 +36,10 @@ export interface AgentInput {
   /** When set, the path the backend should hand to its MCP loader.
    *  Pre-resolved for host-vs-container by the orchestrator. */
   mcpConfigPath?: string | undefined;
+  /** HOST-side path of the broker's start marker (#2842). The broker writes it
+   *  through its own (container) path; a backend that spawns the broker reads
+   *  this one to tell "the process launched" from "it never did". */
+  startMarkerPath?: string | undefined;
   /** Extra allowed-tool names from settings + user MCP servers. */
   extraAllowedTools: string[];
   /** Reasoning effort from settings (#1323). Undefined → flag omitted. */

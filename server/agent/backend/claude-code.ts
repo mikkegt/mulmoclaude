@@ -10,6 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
+import { existsSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -17,7 +18,7 @@ import { resolveSandboxAuth } from "../sandboxMounts.js";
 import { getCachedReferenceDirs, referenceDirMountArgs } from "../../workspace/reference-dirs.js";
 import { createStreamParser, type AgentEvent, type RawStreamEvent } from "../stream.js";
 import { createMcpFailureMonitor } from "../mcpFailureMonitor.js";
-import { getBrokerReady } from "../brokerReadiness.js";
+import { getBrokerReady, getBrokerStarted } from "../brokerReadiness.js";
 import { BUILTIN_MCP_TOOL_PREFIX } from "../activeTools.js";
 import { isMcpBrokerNotReadyError } from "../mcpBrokerFailover.js";
 import { log } from "../../system/logger/index.js";
@@ -177,6 +178,20 @@ function logAgentStderr(line: string): void {
 interface TurnMcpContext {
   chatSessionId: string;
   mcpConfigured: boolean;
+  /** Host-side path of the broker's start marker, when this turn has a broker
+   *  (#2842). Read once, after the CLI exits. */
+  startMarkerPath?: string | undefined;
+}
+
+// Did the broker PROCESS ever exist? Answered by two independent signals,
+// because they fail for unrelated reasons: a marker file the broker writes
+// synchronously before loading anything, and an HTTP beacon it fires at the
+// same moment. See `mcp-start-beacon.mjs` for why both.
+//
+// Read after the CLI exits, so this costs nothing on a healthy turn.
+function brokerEverStarted(turn: TurnMcpContext): boolean {
+  if (getBrokerStarted(turn.chatSessionId)) return true;
+  return turn.startMarkerPath !== undefined && existsSync(turn.startMarkerPath);
 }
 
 // `aborted` is the abort SIGNAL, not `isAbortCausedExit`: the question here is
@@ -186,11 +201,19 @@ interface TurnMcpContext {
 function logIfMcpUnavailable(turn: TurnMcpContext, builtinMcpToolsCalled: number, aborted: boolean): void {
   const brokerEverReady = getBrokerReady(turn.chatSessionId) !== null;
   if (!shouldWarnMcpUnavailable({ mcpConfigured: turn.mcpConfigured, aborted, brokerEverReady, builtinMcpToolsCalled })) return;
+  // `brokerEverStarted` splits this warn's one symptom into the two failures it
+  // was hiding, and they are fixed in different places: a broker that launched
+  // and never answered is the boot (the mount, the `tsx` path), while one that
+  // never launched is the spawn (the command, the paths, a missing module).
+  const started = brokerEverStarted(turn);
   log.warn("agent", "MCP tools were unavailable this turn — the broker never reported ready and none of its tools ran", {
     chatSessionId: turn.chatSessionId,
+    brokerEverStarted: started,
     brokerEverReady,
     builtinMcpToolsCalled,
-    hint: "Look for `[mcp] broker ready` in server/system/logs/; on Docker also check the sandbox volume mounts.",
+    hint: started
+      ? "The broker process started and never answered `initialize` — it is still loading (see `broker=`; `tsx` is the slow path) or it died while loading. Its own error is not in this log: Claude CLI owns its stderr."
+      : "The broker process never started — check the spawn command and the paths it resolves to.",
   });
 }
 
@@ -354,7 +377,11 @@ async function* runClaudeAgent(input: AgentInput): AsyncGenerator<AgentEvent> {
   input.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
   try {
-    yield* readAgentEvents(proc, { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined }, input.abortSignal);
+    yield* readAgentEvents(
+      proc,
+      { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined, startMarkerPath: input.startMarkerPath },
+      input.abortSignal,
+    );
   } finally {
     input.abortSignal?.removeEventListener("abort", onAbort);
     if (!proc.killed) proc.kill();

@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { Request, Response, Router } from "express";
 import mcpBrokerReadyRoutes from "../../../server/api/routes/mcpBrokerReady.js";
-import { BROKER_SLOW_BOOT_MS, beginBrokerSpawn, getBrokerReady, _resetBrokerReadiness } from "../../../server/agent/brokerReadiness.js";
+import { BROKER_SLOW_BOOT_MS, beginBrokerSpawn, getBrokerReady, getBrokerStarted, _resetBrokerReadiness } from "../../../server/agent/brokerReadiness.js";
 import { log } from "../../../server/system/logger/index.js";
 import { ONE_HOUR_MS } from "../../../server/utils/time.js";
 import { API_ROUTES } from "../../../src/config/apiRoutes.js";
@@ -28,20 +28,21 @@ interface LogCall {
 const captured: LogCall[] = [];
 const originalInfo = log.info;
 const originalWarn = log.warn;
+const originalDebug = log.debug;
 
 interface RouterInternals {
   stack: { route?: { path: string; stack: { handle: (req: Request, res: Response) => void }[] } }[];
 }
 
-function getPostHandler(router: Router): (req: Request, res: Response) => void {
+function getPostHandler(router: Router, path: string): (req: Request, res: Response) => void {
   const internals = router as unknown as RouterInternals;
   for (const layer of internals.stack) {
-    if (layer.route && layer.route.path === API_ROUTES.mcp.brokerReady) {
+    if (layer.route && layer.route.path === path) {
       const [first] = layer.route.stack;
       if (first) return first.handle;
     }
   }
-  throw new Error(`POST ${API_ROUTES.mcp.brokerReady} handler not found in router stack`);
+  throw new Error(`POST ${path} handler not found in router stack`);
 }
 
 interface MockResponse {
@@ -71,13 +72,16 @@ function mockResponse(): MockResponse {
   return res;
 }
 
-async function post(session: unknown, body: unknown): Promise<MockResponse> {
-  const handler = getPostHandler(mcpBrokerReadyRoutes);
+async function postTo(path: string, session: unknown, body: unknown): Promise<MockResponse> {
+  const handler = getPostHandler(mcpBrokerReadyRoutes, path);
   const req = { body, query: { session } } as unknown as Request;
   const res = mockResponse();
   await Promise.resolve(handler(req, res as unknown as Response));
   return res;
 }
+
+const post = (session: unknown, body: unknown): Promise<MockResponse> => postTo(API_ROUTES.mcp.brokerReady, session, body);
+const postStarting = (session: unknown, body: unknown): Promise<MockResponse> => postTo(API_ROUTES.mcp.brokerStarting, session, body);
 
 const SPAWN = "spawn-1";
 const fastBoot = { bootMs: 120, initializeMs: 180, kind: "bundle", spawnId: SPAWN } as const;
@@ -213,5 +217,76 @@ describe("POST /api/mcp/broker-ready", () => {
     await post("chat-2", fastBoot);
     assert.equal(beginBrokerSpawn("chat-2", "spawn-2", null), "none");
     assert.equal(getBrokerReady("chat-2"), null);
+  });
+});
+
+// The start beacon answers a different question from the ready beacon, and the
+// difference is the whole point: "did the process exist" vs "did it finish
+// booting". Measuring against a broker that never launched showed the CLI
+// surfaces that within seconds on its own — so this exists to tell the two
+// failures apart in the log, not to act on them.
+describe("POST /api/mcp/broker-starting", () => {
+  beforeEach(() => {
+    captured.length = 0;
+    _resetBrokerReadiness();
+    log.debug = (namespace, message, data) => {
+      captured.push({ level: "info", namespace, message, data });
+    };
+  });
+
+  afterEach(() => {
+    log.debug = originalDebug;
+    _resetBrokerReadiness();
+  });
+
+  it("records that the process exists", async () => {
+    armSpawn("chat-start");
+    const res = await postStarting("chat-start", { spawnId: SPAWN });
+    assert.equal(res.statusCode, 204);
+    assert.equal(getBrokerStarted("chat-start"), true);
+  });
+
+  // Started is not ready: a broker can announce itself and then never finish
+  // loading, which is a different diagnosis with a different fix.
+  it("does not imply readiness", async () => {
+    armSpawn("chat-start");
+    await postStarting("chat-start", { spawnId: SPAWN });
+    assert.equal(getBrokerReady("chat-start"), null);
+  });
+
+  // A straggler from the attempt that just failed must not vouch for the one
+  // replacing it — the same spawn-id gate the ready beacon uses.
+  it("ignores a beacon from a superseded spawn", async () => {
+    armSpawn("chat-start", "spawn-2");
+    const res = await postStarting("chat-start", { spawnId: "spawn-1" });
+    assert.equal(res.statusCode, 204);
+    assert.equal(getBrokerStarted("chat-start"), false);
+  });
+
+  it("reports false for a session nothing was ever recorded against", () => {
+    assert.equal(getBrokerStarted("never-seen"), false);
+  });
+
+  it("rejects a missing session", async () => {
+    const res = await postStarting(undefined, { spawnId: SPAWN });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it("rejects a missing or non-string spawn id", async () => {
+    armSpawn("chat-start");
+    assert.equal((await postStarting("chat-start", {})).statusCode, 400);
+    assert.equal((await postStarting("chat-start", { spawnId: 7 })).statusCode, 400);
+    assert.equal((await postStarting("chat-start", { spawnId: "" })).statusCode, 400);
+    assert.equal(getBrokerStarted("chat-start"), false);
+  });
+
+  // A new spawn clears the previous one's answer, or a replay would inherit
+  // the failed attempt's evidence.
+  it("is cleared by the next spawn", async () => {
+    armSpawn("chat-start", "spawn-1");
+    await postStarting("chat-start", { spawnId: "spawn-1" });
+    assert.equal(getBrokerStarted("chat-start"), true);
+    armSpawn("chat-start", "spawn-2");
+    assert.equal(getBrokerStarted("chat-start"), false);
   });
 });

@@ -1,0 +1,92 @@
+// The first thing the MCP broker process does (#2842).
+//
+// Loaded with `--import`, so node evaluates it BEFORE the broker's own entry —
+// before tsx transcodes the 292-file import graph, and before node reads the
+// 6 MB bundle. That ordering is the point: it turns "the process exists" into
+// something the host can see, separately from "the process finished booting",
+// which the ready beacon reports afterwards. A broker that is merely slow has
+// answered this within milliseconds; one that never launched never will, and
+// that difference is what lets the host stop waiting on a doomed turn instead
+// of sitting out the CLI's full connect timeout.
+//
+// TWO signals, because the decision they feed KILLS a running turn and they
+// fail for unrelated reasons:
+//
+//   1. A marker file, written synchronously. Measured at 59 ms into a process
+//      whose boot went on for another 890 ms.
+//   2. An HTTP beacon to the host, retried.
+//
+// The file is the one that actually beats a slow boot. Node is single
+// threaded, and tsx's transcode blocks the event loop, so the fetch below
+// cannot complete until the boot it is supposed to precede has finished — on
+// the tsx path both beacons reached the host 2 ms apart. The HTTP beacon
+// stays because it needs no shared filesystem: it covers the mount being
+// unwritable or slow to propagate, where the file covers the network being
+// blocked. The host holds off if EITHER arrives.
+//
+// Import-free apart from node builtins: importing anything of this repo's
+// would be loaded before the signal fires, reintroducing the very delay the
+// signal exists to precede. That is also why the retry below is written out
+// rather than shared with `brokerBeacon.ts`.
+
+import { writeFileSync } from "node:fs";
+
+const HOST = process.env.MCP_HOST || "localhost";
+const PORT = process.env.PORT || "";
+const SESSION_ID = process.env.SESSION_ID || "";
+const SPAWN_ID = process.env.MCP_SPAWN_ID || "";
+const TOKEN = process.env.MULMOCLAUDE_AUTH_TOKEN || "";
+const MARKER_PATH = process.env.MCP_START_MARKER || "";
+
+// Short and repeated rather than long and single: the host is deciding whether
+// this process is alive, so a late delivery is worth little.
+const ATTEMPTS = 3;
+const RETRY_DELAY_MS = 500;
+const TIMEOUT_MS = 2000;
+
+// Synchronous and first, so it lands even while the boot that follows holds the
+// event loop. Failure is not worth reporting: the HTTP beacon is the fallback,
+// and a broker that cannot write here still works.
+if (MARKER_PATH) {
+  try {
+    writeFileSync(MARKER_PATH, SPAWN_ID);
+  } catch {
+    // ignored — see above
+  }
+}
+
+const wait = (delayMs) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, delayMs).unref();
+  });
+
+async function send() {
+  const url = `http://${HOST}:${PORT}/api/mcp/broker-starting?session=${encodeURIComponent(SESSION_ID)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}) },
+    body: JSON.stringify({ spawnId: SPAWN_ID }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+async function deliver(remaining) {
+  try {
+    await send();
+  } catch (err) {
+    if (remaining <= 1) {
+      // The broker's stderr belongs to Claude CLI, so this line is for a
+      // developer running the broker by hand. The host's own log says what the
+      // missing signal meant for the turn.
+      process.stderr.write(`[mcp-start-beacon] undelivered after ${ATTEMPTS} attempts: ${String(err)}\n`);
+      return;
+    }
+    await wait(RETRY_DELAY_MS);
+    await deliver(remaining - 1);
+  }
+}
+
+// Never awaited: the broker's boot must not wait on the host, and a host slow
+// to answer is no reason to delay the startup being measured.
+if (PORT && SESSION_ID) void deliver(ATTEMPTS);

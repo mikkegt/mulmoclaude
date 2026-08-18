@@ -20,7 +20,7 @@ import { Router, type Request, type Response } from "express";
 import { API_ROUTES } from "../../../src/config/apiRoutes.js";
 import { badRequest } from "../../utils/httpError.js";
 import { log } from "../../system/logger/index.js";
-import { BROKER_SLOW_BOOT_MS, recordBrokerReady, type BrokerReady } from "../../agent/brokerReadiness.js";
+import { BROKER_SLOW_BOOT_MS, recordBrokerReady, recordBrokerStarting, type BrokerReady } from "../../agent/brokerReadiness.js";
 import { ONE_MINUTE_MS } from "../../utils/time.js";
 
 interface BrokerReadyBody {
@@ -94,6 +94,35 @@ router.post(API_ROUTES.mcp.brokerReady, (req: Request<object, unknown, BrokerRea
     return;
   }
   logBrokerReady(sessionId, beacon.ready);
+  res.status(204).end();
+});
+
+// POST /api/mcp/broker-starting — the broker's `--import` preload reporting
+// that the process exists, before it has loaded anything of its own.
+//
+// Why a second beacon: the ready beacon arrives after the cold boot, so while
+// the host is still waiting for it, "slow" and "dead" are the same observation.
+// This one does not wait for anything to load, so its absence past a short
+// deadline means the process is not running — which is what lets the host stop
+// a doomed turn instead of sitting out the CLI's full connect timeout.
+router.post(API_ROUTES.mcp.brokerStarting, (req: Request<object, unknown, { spawnId?: unknown }>, res: Response) => {
+  const sessionId = req.query.session;
+  if (typeof sessionId !== "string" || sessionId.length === 0) {
+    badRequest(res, "session query parameter required");
+    return;
+  }
+  const spawnId = req.body?.spawnId;
+  if (typeof spawnId !== "string" || spawnId.length === 0) {
+    badRequest(res, "spawnId required");
+    return;
+  }
+  // Debug, not info: this fires on every single spawn and carries no
+  // measurement. It is still worth recording, because the host now ENDS a turn
+  // when it does not arrive — so "the beacon was reaching us all along" has to
+  // be answerable from the log rather than by reasoning about the network.
+  // A straggler from a superseded spawn is not this turn's evidence.
+  const counted = recordBrokerStarting(sessionId, spawnId);
+  log.debug("mcp", "broker starting", { chatSessionId: sessionId, counted });
   res.status(204).end();
 });
 

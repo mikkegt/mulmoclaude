@@ -66,6 +66,42 @@ the one legal `Z`-suffixed datetime is the one a shared app's server stamps.
 
 ### Fixed
 
+#### The log says whether the broker PROCESS existed, not just whether it answered (#2842)
+
+`brokerEverReady=false` was carrying two different failures with two different
+fixes: a broker that launched and never finished booting, and one that never
+launched at all. `error-recovery.md` resolved the ambiguity by asserting the
+second — "no `broker ready` line anywhere → the broker never started" — and
+measuring showed that inference is wrong for exactly the case that costs the
+most time.
+
+The broker now announces itself before it loads anything, through an `--import`
+preload that runs ahead of its own entry module. Two signals, because they fail
+for unrelated reasons and neither is worth losing: a marker file written
+synchronously, and an HTTP beacon. The file is the one that beats a slow boot —
+node is single threaded and tsx's transcode blocks the event loop, so the fetch
+cannot complete until the boot it is meant to precede has finished. Measured on
+the tsx path, both beacons reached the host 2 ms apart, while the marker landed
+59 ms into a process whose boot went on for another 890 ms. The beacon stays
+because it needs no shared filesystem, and the host accepts either.
+
+`MCP tools were unavailable this turn` now carries `brokerEverStarted` and picks
+its hint from it: the boot (the mount, the `tsx` path) when the process was
+there, the spawn (the command, the paths, a missing module) when it was not.
+
+**What this deliberately does not do.** The reporter's third suggestion was to
+give up early rather than sit out the connect timeout, and the startup signal
+above is what that would have been built on. Measuring it first is what stopped
+it from being built. A broker that cannot be spawned does not cost 60 s: with
+the command pointed at a binary that does not exist, the CLI surfaced the error
+in 8.9 s, having already streamed text and run two tools, because a failed spawn
+is immediate and it simply proceeds without the tool. The case that DOES cost
+the full wait is a broker that launched and is still booting — where the signal
+reports `started` and a fail-fast would have to hold off, or else kill a turn
+that was about to succeed. So the only case a watchdog could catch is already
+fast, and the slow case is one it must not touch. It would have added a way to
+kill live turns and bought nothing.
+
 #### A broker that never starts is not replayed into a second full connect wait (#2842)
 
 When a turn dies on `MCP tool mcp__mulmoclaude__handlePermission … not found`,

@@ -1,7 +1,7 @@
 import { basename, dirname, join } from "path";
 import { homedir, tmpdir } from "os";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Role } from "../../src/config/roles.js";
 import { mcpTools, isMcpToolEnabled } from "./mcp-tools/index.js";
@@ -41,6 +41,14 @@ const CONTAINER_WORKSPACE_MODULES_PATH = "/app/pkg_modules";
 // straight at the loader would just evaluate its top level and
 // leave the exported `resolve()` inert.
 const CONTAINER_ESM_BOOTSTRAP_URL = "file:///app/server/agent/mcp-esm-bootstrap.mjs";
+
+// `--import`ed ahead of everything else so it runs before the broker's own
+// entry is loaded — that is what makes "the process exists" observable
+// separately from "the process finished booting" (#2842). Passed on BOTH spawn
+// paths and in both modes, because the question it answers ("did this thing
+// launch at all?") is the same everywhere.
+const START_BEACON_FILENAME = "mcp-start-beacon.mjs";
+const CONTAINER_START_BEACON_URL = `file:///app/server/agent/${START_BEACON_FILENAME}`;
 
 // `Skill` is the tool Claude Code uses to execute a discovered
 // `.claude/skills/<name>/SKILL.md`. Because `--allowedTools` is passed
@@ -137,6 +145,9 @@ export interface McpConfigParams {
   /** Identity of the broker this config will spawn, echoed back by its
    *  startup beacon so a superseded attempt's reading can be discarded. */
   spawnId?: string;
+  /** Where the broker writes its start marker, in the coordinates the broker
+   *  sees. See `resolveBrokerStartMarkerPaths`. */
+  startMarkerPath?: string;
 }
 
 // In Docker mode the sandbox container can't reach the host's
@@ -318,6 +329,16 @@ const BUNDLED_MCP_SERVER_PATH = join(dirname(dirname(fileURLToPath(import.meta.u
 const CONTAINER_BUNDLED_MCP_SERVER_PATH = "/app/server/build/mcp-server.mjs";
 const CONTAINER_MCP_SERVER_PATH = "/app/server/agent/mcp-server.ts";
 
+/** Where the start-beacon preload lives, as a URL `--import` accepts. Anchored
+ *  the same way as the broker paths: a sibling of this module in dev and in the
+ *  packaged install alike, and `server/` is bind-mounted whole into the
+ *  container. A URL rather than a bare path because a Windows drive letter is
+ *  not a valid ESM specifier. */
+export function startBeaconUrl(useDocker: boolean): string {
+  if (useDocker) return CONTAINER_START_BEACON_URL;
+  return pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), START_BEACON_FILENAME)).href;
+}
+
 /** Which of the two spawn paths was taken. Names the CAUSE of the cold-boot
  *  cost, so a log line carrying it answers "is this install on the 20-50 s
  *  path?" without the reader having to know what a bundle is (#2842). */
@@ -438,8 +459,12 @@ export function buildMulmoclaudeServer(params: {
   /** Identity of this particular broker, for the startup beacon. Omitted by
    *  callers that only inspect the spec and never spawn it. */
   spawnId?: string;
+  /** Where the broker writes its start marker, in the coordinates IT sees
+   *  (container path under Docker). Omitted by callers that only inspect the
+   *  spec; the preload then skips the file half of the signal. */
+  startMarkerPath?: string;
 }): McpStdioServerSpec {
-  const { chatSessionId, port, activePlugins, useDocker, spawnId = "" } = params;
+  const { chatSessionId, port, activePlugins, useDocker, spawnId = "", startMarkerPath = "" } = params;
   const { command, scriptPath: mcpServerPath } = params.broker ?? resolveBrokerSpawn(useDocker);
 
   const dockerEnv: Record<string, string> = useDocker
@@ -472,7 +497,11 @@ export function buildMulmoclaudeServer(params: {
     // as a Node CLI flag; tsx forwards `--import` through. No-op on
     // Linux/macOS Docker (the hook's catch never fires). Native
     // mode never sees this flag.
-    args: useDocker ? ["--import", CONTAINER_ESM_BOOTSTRAP_URL, mcpServerPath] : [mcpServerPath],
+    // Order matters: the start beacon first, so the earliest possible moment is
+    // the one it reports. `--import` is a node flag; `tsx` forwards it.
+    args: useDocker
+      ? ["--import", startBeaconUrl(true), "--import", CONTAINER_ESM_BOOTSTRAP_URL, mcpServerPath]
+      : ["--import", startBeaconUrl(false), mcpServerPath],
     env: {
       SESSION_ID: chatSessionId,
       // Identifies THIS broker, where SESSION_ID identifies the conversation.
@@ -480,6 +509,9 @@ export function buildMulmoclaudeServer(params: {
       // superseded attempt instead of crediting it to the retry that replaced
       // it (#2842, Codex review on #2898).
       MCP_SPAWN_ID: spawnId,
+      // Written synchronously by the `--import` preload, before anything else
+      // loads. Empty when the caller is only inspecting the spec.
+      MCP_START_MARKER: startMarkerPath,
       PORT: String(port),
       PLUGIN_NAMES: activePlugins.join(","),
       // The broker's stdout carries JSON-RPC. The shared `log` helper
@@ -522,6 +554,7 @@ export function buildMcpConfig(params: McpConfigParams): { mcpServers: Record<st
         useDocker,
         ...(params.broker ? { broker: params.broker } : {}),
         ...(params.spawnId ? { spawnId: params.spawnId } : {}),
+        ...(params.startMarkerPath ? { startMarkerPath: params.startMarkerPath } : {}),
       }),
       ...excludeReservedKeys(userServers),
     },
@@ -736,6 +769,26 @@ export function resolveMcpConfigPaths(opts: { workspacePath: string; sessionId: 
     return { hostPath, argPath };
   }
   const hostPath = join(tmpdir(), `mulmoclaude-mcp-${sid}.json`);
+  return { hostPath, argPath: hostPath };
+}
+
+/** Where the broker's start marker goes — the synchronous half of the startup
+ *  signal (#2842). Same host/container split as the MCP config, for the same
+ *  reason: under Docker the file has to sit inside the workspace bind mount so
+ *  both sides see it, and the OS tmpdir is fine natively.
+ *
+ *  Keyed by SPAWN, not by session: a replay spawns a second broker while the
+ *  first attempt's marker may still be on disk, and a marker that could vouch
+ *  for a broker other than the one being waited on is worse than none. */
+export function resolveBrokerStartMarkerPaths(opts: { workspacePath: string; sessionId: string; useDocker: boolean; spawnId: string }): SessionFilePaths {
+  const name = `broker-start-${safeSessionSegment(opts.sessionId)}-${safeSessionSegment(opts.spawnId)}`;
+  if (opts.useDocker) {
+    return {
+      hostPath: join(opts.workspacePath, ".mulmoclaude", name),
+      argPath: `${CONTAINER_WORKSPACE_PATH}/.mulmoclaude/${name}`,
+    };
+  }
+  const hostPath = join(tmpdir(), `mulmoclaude-${name}`);
   return { hostPath, argPath: hostPath };
 }
 
