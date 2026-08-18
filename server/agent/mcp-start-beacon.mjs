@@ -87,6 +87,11 @@ async function deliver(remaining) {
   }
 }
 
-// Never awaited: the broker's boot must not wait on the host, and a host slow
-// to answer is no reason to delay the startup being measured.
-if (PORT && SESSION_ID) void deliver(ATTEMPTS);
+// Never awaited, and never able to reject: this is fire-and-forget from a
+// module the broker loads before anything else, so a rejection here becomes an
+// unhandled rejection in the broker rather than a missing diagnostic. The
+// reporter is the reachable path — it writes to a stderr pipe Claude CLI owns,
+// and a CLI that has already exited turns that write into an EPIPE throw. The
+// same escape was found in `brokerBeacon.ts` (Codex review on #2931); this copy
+// exists only because the preload may not import anything.
+if (PORT && SESSION_ID) void deliver(ATTEMPTS).catch(() => {});

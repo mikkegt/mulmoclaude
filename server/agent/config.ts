@@ -779,7 +779,12 @@ export function resolveMcpConfigPaths(opts: { workspacePath: string; sessionId: 
  *
  *  Keyed by SPAWN, not by session: a replay spawns a second broker while the
  *  first attempt's marker may still be on disk, and a marker that could vouch
- *  for a broker other than the one being waited on is worse than none. */
+ *  for a broker other than the one being waited on is worse than none.
+ *
+ *  Deliberately the SAME directory as the MCP config, which is what creates it
+ *  (`writeMcpConfig` mkdirs it under Docker). The preload writes the marker
+ *  synchronously and cannot afford an mkdir, so moving either path without the
+ *  other would leave it writing into a directory that does not exist. */
 export function resolveBrokerStartMarkerPaths(opts: { workspacePath: string; sessionId: string; useDocker: boolean; spawnId: string }): SessionFilePaths {
   const name = `broker-start-${safeSessionSegment(opts.sessionId)}-${safeSessionSegment(opts.spawnId)}`;
   if (opts.useDocker) {
