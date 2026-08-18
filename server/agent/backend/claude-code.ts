@@ -262,7 +262,11 @@ export function markerHolds(markerPath: string, spawnId: string): boolean {
 // ours. A cancel that lets the CLI exit 0 cleanly is still a turn that never got
 // to use its tools, and `isAbortCausedExit` reads that one as a normal finish.
 function logIfMcpUnavailable(turn: TurnMcpContext, builtinMcpToolsCalled: number, aborted: boolean): void {
-  const brokerEverReady = getBrokerReady(turn.chatSessionId) !== null;
+  // Spawn-scoped like `brokerEverStarted`, and for the same reason: this runs
+  // after the CLI exited, by which time a replay may have started a second
+  // broker for the same session. A session-keyed read would let that one
+  // suppress the diagnosis for the attempt that actually failed.
+  const brokerEverReady = turn.spawnId !== undefined && getBrokerReady(turn.chatSessionId, turn.spawnId) !== null;
   if (!shouldWarnMcpUnavailable({ mcpConfigured: turn.mcpConfigured, aborted, brokerEverReady, builtinMcpToolsCalled })) return;
   // `brokerEverStarted` splits this warn's one symptom into the two failures it
   // was hiding, and they are fixed in different places: a broker that launched

@@ -86,10 +86,29 @@ export function getBrokerStarted(sessionId: string, spawnId: string): boolean {
   return current?.spawnId === spawnId && current.started;
 }
 
-/** `null` means no beacon arrived for the CURRENT spawn — either the broker
- *  never got far enough to send one, or it is still booting. */
-export function getBrokerReady(sessionId: string): BrokerReady | null {
+/** Readiness of the spawn the host is CURRENTLY waiting on. `null` means no
+ *  beacon arrived for it — either the broker never got far enough to send one,
+ *  or it is still booting.
+ *
+ *  For the recovery path, which runs before any replacement broker exists, so
+ *  "current" is unambiguously the spawn whose turn just failed. Anything that
+ *  runs after a replay may have spawned must ask by spawn id instead. */
+export function getCurrentBrokerReady(sessionId: string): BrokerReady | null {
   return readinessBySession.get(sessionId)?.ready ?? null;
+}
+
+/** Readiness of the NAMED spawn, or `null` when the host has moved on to a
+ *  later one.
+ *
+ *  Only one spawn per session is tracked, so a replay's broker displaces its
+ *  predecessor's reading rather than sitting beside it. Answering `null` for a
+ *  displaced spawn is the point: the alternative is answering with the
+ *  REPLACEMENT's readiness, which would let a healthy second broker report that
+ *  the attempt it replaced had come up — the diagnosis backwards (Codex review
+ *  on #2932). */
+export function getBrokerReady(sessionId: string, spawnId: string): BrokerReady | null {
+  const current = readinessBySession.get(sessionId);
+  return current?.spawnId === spawnId ? current.ready : null;
 }
 
 /** Everything a broker spawn owes the readiness state: make this broker the one

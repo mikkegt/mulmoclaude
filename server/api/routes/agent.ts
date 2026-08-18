@@ -31,7 +31,7 @@ import {
   type RecoveryKind,
   type RetryBudgets,
 } from "../../agent/retryPolicy.js";
-import { getBrokerReady } from "../../agent/brokerReadiness.js";
+import { getCurrentBrokerReady } from "../../agent/brokerReadiness.js";
 import {
   recordPushReply,
   splitSkillAndReply,
@@ -962,7 +962,11 @@ async function recoverStaleSession(chatSessionId: string, decoratedMessage: stri
 type BrokerRecoveryOutcome = "replay" | "give-up" | "aborted";
 
 async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSignal): Promise<BrokerRecoveryOutcome> {
-  const readyBeforeWait = getBrokerReady(chatSessionId);
+  // The CURRENT spawn, not a named one: this runs between the failure and the
+  // replay, so no replacement broker exists yet and "current" is the spawn
+  // whose turn just failed. The turn's own spawn id is created inside
+  // `runAgent` and never leaves it.
+  const readyBeforeWait = getCurrentBrokerReady(chatSessionId);
   pushSessionEvent(chatSessionId, {
     type: EVENT_TYPES.status,
     message: "Tools are still starting up…",
@@ -973,7 +977,7 @@ async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSi
   // until the beacon has run out of delivery attempts, and refusing a replay on
   // a beacon still in flight would break the recovery this wait exists for.
   const paused = abortableSleep(BROKER_RECONNECT_WAIT_MS, abortSignal);
-  const ready = await awaitBrokerReady(() => getBrokerReady(chatSessionId), BROKER_READY_DECISION_WINDOW_MS, abortSignal);
+  const ready = await awaitBrokerReady(() => getCurrentBrokerReady(chatSessionId), BROKER_READY_DECISION_WINDOW_MS, abortSignal);
   await paused;
   // A stop cuts both short, so "no beacon yet" says nothing about the broker
   // here. Judging anyway would log a diagnosis for a turn the user cancelled —
