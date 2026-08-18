@@ -83,7 +83,7 @@ function realpathOrSelf(candidate: string): string {
 // #2632: prune runtime writes and (on Windows) sandbox-mount mtime bumps from
 // the dev watcher, both of which full-reload the page mid-agent-turn.
 const devWatchIgnore = createDevWatchIgnore({
-  projectRoot: realpathOrSelf(__dirname),
+  projectRoot: realpathOrSelf(import.meta.dirname),
   workspacePath: realpathOrSelf(resolveWorkspacePath()),
   platform: process.platform,
   watchPackageDists: process.env.MULMOCLAUDE_DEV_WATCH_PACKAGES === '1',
@@ -134,13 +134,14 @@ const requestFromLoopback = new AsyncLocalStorage<boolean>()
 
 // Every path this dev server forwards to Express. Kept in sync with
 // `server.proxy` below — a prefix added there without being added here is
-// reachable from the LAN whenever MULMOCLAUDE_DEV_LAN is set.
+// reachable from the LAN whenever MULMOCLAUDE_DEV_LAN is set
+// (`test/config/test_viteDevProxy.ts` fails when the two drift apart).
 //
 // `/ws` is the backend pub/sub socket. It needs BOTH guards below: the
 // connect middleware never sees a WebSocket handshake (those arrive on the
 // http server's `upgrade` event, not the request pipeline), so the prefix
 // alone would not stop it.
-const PROXIED_BACKEND_PREFIXES = ['/api', '/artifacts', '/ws'] as const
+export const PROXIED_BACKEND_PREFIXES = ['/api', '/artifacts', '/htmlfile', '/ws'] as const
 
 function startsWithProxiedPrefix(url: string | undefined): boolean {
   return PROXIED_BACKEND_PREFIXES.some((prefix) => url?.startsWith(prefix) ?? false)
@@ -277,12 +278,12 @@ export default defineConfig({
       // build-time `import` references it — the importmap is consumed
       // by the BROWSER, not by Vite's static analysis.
       input: {
-        index: path.resolve(__dirname, 'index.html'),
-        'runtime-vue': path.resolve(__dirname, 'src/_runtime/vue.ts'),
+        index: path.resolve(import.meta.dirname, 'index.html'),
+        'runtime-vue': path.resolve(import.meta.dirname, 'src/_runtime/vue.ts'),
         // Same pattern as runtime-vue: the importmap consumer is the
         // browser, not Vite's static analysis, so without this entry
         // the chunk gets tree-shaken out of the build.
-        'runtime-protocol-vue': path.resolve(__dirname, 'src/_runtime/protocol-vue.ts'),
+        'runtime-protocol-vue': path.resolve(import.meta.dirname, 'src/_runtime/protocol-vue.ts'),
       },
       // Force every named re-export from `src/_runtime/vue.ts` to be
       // preserved in the emitted chunk. Without `'strict'`, Rolldown
@@ -380,6 +381,22 @@ export default defineConfig({
       // request (Chrome happens to be lenient because images route through the
       // same proxy).
       '/artifacts/html': {
+        target: SERVER_ORIGIN,
+        changeOrigin: true,
+        xfwd: true
+      },
+      // Static-mount on the backend (server/index.ts: app.use(HTML_FILE_MOUNT, ...)),
+      // serving a page presentHtml was pointed AT rather than one it wrote — the
+      // `path` form's `docs/report.html` or an absolute path. Its iframe `src`
+      // comes from `htmlFileUrl()` in @mulmoclaude/html-plugin. Without this the
+      // SPA catch-all answers 200 with index.html and the pane renders blank
+      // (#2928); `test/config/test_viteDevProxy.ts` pins the URLs against this
+      // table so a new URL shape fails there instead.
+      //
+      // `xfwd: true` for the same reason as `/artifacts/html`, and it bites
+      // harder here: this mount serves the page's subresources (images, media)
+      // too, so a CSP naming the backend origin blocks them.
+      '/htmlfile': {
         target: SERVER_ORIGIN,
         changeOrigin: true,
         xfwd: true
