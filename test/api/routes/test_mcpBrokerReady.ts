@@ -17,7 +17,7 @@ import {
   BROKER_SLOW_BOOT_MS,
   beginBrokerSpawn,
   getBrokerReady,
-  getCurrentBrokerReady,
+  getCurrentBrokerSpawn,
   getBrokerStarted,
   _resetBrokerReadiness,
 } from "../../../server/agent/brokerReadiness.js";
@@ -99,6 +99,10 @@ function armSpawn(sessionId: string, spawnId = SPAWN): void {
   beginBrokerSpawn(sessionId, spawnId, "bundle");
 }
 
+/** The reading for whichever spawn is current — how the recovery path starts,
+ *  before it pins the rest of its question to that spawn's id. */
+const currentReady = (sessionId: string) => getCurrentBrokerSpawn(sessionId)?.ready ?? null;
+
 describe("POST /api/mcp/broker-ready", () => {
   beforeEach(() => {
     captured.length = 0;
@@ -121,7 +125,7 @@ describe("POST /api/mcp/broker-ready", () => {
     armSpawn("chat-1");
     const res = await post("chat-1", fastBoot);
     assert.equal(res.statusCode, 204);
-    assert.deepEqual(getCurrentBrokerReady("chat-1"), { bootMs: 120, initializeMs: 180, kind: "bundle" });
+    assert.deepEqual(currentReady("chat-1"), { bootMs: 120, initializeMs: 180, kind: "bundle" });
     const [entry] = captured;
     assert.ok(entry);
     assert.equal(entry.level, "info");
@@ -133,7 +137,7 @@ describe("POST /api/mcp/broker-ready", () => {
   it("leaves an untouched session with no reading", async () => {
     armSpawn("chat-1");
     await post("chat-1", fastBoot);
-    assert.equal(getCurrentBrokerReady("chat-2"), null);
+    assert.equal(currentReady("chat-2"), null);
   });
 
   it("warns instead of infos once the boot crosses the slow threshold", async () => {
@@ -157,13 +161,13 @@ describe("POST /api/mcp/broker-ready", () => {
     assert.equal((await post("s", { ...fastBoot, initializeMs: Number.POSITIVE_INFINITY })).statusCode, 400);
     assert.equal((await post("s", { ...fastBoot, bootMs: "120" })).statusCode, 400);
     assert.equal((await post("s", { ...fastBoot, bootMs: ONE_HOUR_MS })).statusCode, 400);
-    assert.equal(getCurrentBrokerReady("s"), null);
+    assert.equal(currentReady("s"), null);
   });
 
   it("rejects an unknown broker kind rather than recording it", async () => {
     assert.equal((await post("s", { ...fastBoot, kind: "deno" })).statusCode, 400);
     assert.equal((await post("s", { bootMs: 1, initializeMs: 2 })).statusCode, 400);
-    assert.equal(getCurrentBrokerReady("s"), null);
+    assert.equal(currentReady("s"), null);
   });
 
   // Codex review on #2898. The key is the CHAT session, stable for the life of
@@ -179,10 +183,10 @@ describe("POST /api/mcp/broker-ready", () => {
   it("does not let one turn's beacon vouch for a later turn's broker", async () => {
     armSpawn("chat-1");
     await post("chat-1", fastBoot);
-    assert.ok(getCurrentBrokerReady("chat-1"), "precondition: turn 1 recorded a beacon");
+    assert.ok(currentReady("chat-1"), "precondition: turn 1 recorded a beacon");
 
     assert.equal(beginBrokerSpawn("chat-1", "spawn-2", "bundle"), "bundle");
-    assert.equal(getCurrentBrokerReady("chat-1"), null, "turn 2's spawn must start with no beacon on record");
+    assert.equal(currentReady("chat-1"), null, "turn 2's spawn must start with no beacon on record");
   });
 
   // Codex review iter-4, and the sharper version of the same problem. The 3 s
@@ -200,7 +204,7 @@ describe("POST /api/mcp/broker-ready", () => {
     const straggler = await post("chat-retry", { ...fastBoot, bootMs: 55_000, initializeMs: 55_100, spawnId: "attempt-1" });
 
     assert.equal(straggler.statusCode, 204, "a straggler is not the sender's fault");
-    assert.equal(getCurrentBrokerReady("chat-retry"), null, "attempt 1's beacon must not vouch for attempt 2");
+    assert.equal(currentReady("chat-retry"), null, "attempt 1's beacon must not vouch for attempt 2");
     assert.ok(
       captured.some((entry) => entry.message.includes("superseded")),
       `the discard should still be logged, got: ${captured.map((entry) => entry.message).join(" | ")}`,
@@ -210,20 +214,20 @@ describe("POST /api/mcp/broker-ready", () => {
   it("still records the beacon that does belong to the current attempt", async () => {
     armSpawn("chat-retry", "attempt-2");
     await post("chat-retry", { ...fastBoot, spawnId: "attempt-2" });
-    assert.deepEqual(getCurrentBrokerReady("chat-retry"), { bootMs: 120, initializeMs: 180, kind: "bundle" });
+    assert.deepEqual(currentReady("chat-retry"), { bootMs: 120, initializeMs: 180, kind: "bundle" });
   });
 
   it("rejects a beacon that names no spawn at all", async () => {
     armSpawn("chat-3");
     assert.equal((await post("chat-3", { bootMs: 1, initializeMs: 2, kind: "bundle" })).statusCode, 400);
-    assert.equal(getCurrentBrokerReady("chat-3"), null);
+    assert.equal(currentReady("chat-3"), null);
   });
 
   it("reports no broker, and still resets, when the turn runs without MCP", async () => {
     armSpawn("chat-2");
     await post("chat-2", fastBoot);
     assert.equal(beginBrokerSpawn("chat-2", "spawn-2", null), "none");
-    assert.equal(getCurrentBrokerReady("chat-2"), null);
+    assert.equal(currentReady("chat-2"), null);
   });
 });
 
@@ -258,7 +262,7 @@ describe("POST /api/mcp/broker-starting", () => {
   it("does not imply readiness", async () => {
     armSpawn("chat-start");
     await postStarting("chat-start", { spawnId: SPAWN });
-    assert.equal(getCurrentBrokerReady("chat-start"), null);
+    assert.equal(currentReady("chat-start"), null);
   });
 
   // A straggler from the attempt that just failed must not vouch for the one
@@ -326,12 +330,30 @@ describe("POST /api/mcp/broker-starting", () => {
   });
 
   // The recovery path asks a different question — "the spawn we are waiting
-  // on" — and runs before any replacement exists, so it reads the current one.
+  // on" — because the turn's own spawn id never leaves `runAgent`.
   it("reports the current spawn's reading for the recovery path", async () => {
     armSpawn("chat-current", "spawn-1");
     await post("chat-current", { ...fastBoot, spawnId: "spawn-1" });
-    assert.notEqual(getCurrentBrokerReady("chat-current"), null);
+    assert.notEqual(currentReady("chat-current"), null);
     armSpawn("chat-current", "spawn-2");
-    assert.equal(getCurrentBrokerReady("chat-current"), null, "the replacement starts with no reading of its own");
+    assert.equal(currentReady("chat-current"), null, "the replacement starts with no reading of its own");
+  });
+
+  // …and having read WHICH spawn that is, it asks about that one for the rest
+  // of the wait. `beginRun` already refuses a second run per chat session, so
+  // no other spawn can appear mid-wait today — but the gate lives elsewhere and
+  // could move, and a diagnosis that is only correct because of a distant
+  // invariant is one nobody can check (Codex review on #2932).
+  it("pins the recovery question to the spawn it started with", async () => {
+    armSpawn("chat-pinned", "spawn-1");
+    const spawn = getCurrentBrokerSpawn("chat-pinned");
+    assert.equal(spawn?.spawnId, "spawn-1");
+
+    // A later spawn reports ready while the wait is still running.
+    armSpawn("chat-pinned", "spawn-2");
+    await post("chat-pinned", { ...fastBoot, spawnId: "spawn-2" });
+
+    assert.equal(getBrokerReady("chat-pinned", spawn?.spawnId ?? ""), null, "spawn-2's beacon must not answer for spawn-1");
+    assert.notEqual(currentReady("chat-pinned"), null, "and it is still the current spawn's own reading");
   });
 });

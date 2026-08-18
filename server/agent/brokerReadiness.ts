@@ -86,15 +86,21 @@ export function getBrokerStarted(sessionId: string, spawnId: string): boolean {
   return current?.spawnId === spawnId && current.started;
 }
 
-/** Readiness of the spawn the host is CURRENTLY waiting on. `null` means no
- *  beacon arrived for it — either the broker never got far enough to send one,
- *  or it is still booting.
+/** Which spawn the host is currently waiting on, and its reading so far.
  *
- *  For the recovery path, which runs before any replacement broker exists, so
- *  "current" is unambiguously the spawn whose turn just failed. Anything that
- *  runs after a replay may have spawned must ask by spawn id instead. */
-export function getCurrentBrokerReady(sessionId: string): BrokerReady | null {
-  return readinessBySession.get(sessionId)?.ready ?? null;
+ *  For the recovery path, which has no spawn id of its own — the turn's is
+ *  created inside `runAgent` and never leaves it. Capturing the id HERE, before
+ *  the wait, is what lets the rest of that path ask by spawn id: it pins the
+ *  question to the spawn whose turn actually failed, instead of to whatever
+ *  spawn is current when the answer is read (Codex review on #2932).
+ *
+ *  A second run for one chat session is already refused (`beginRun` 409s), so
+ *  today no other spawn can appear during that wait. This does not rely on
+ *  that: the gate is somewhere else and could move, and a diagnosis that is
+ *  only correct because of a distant invariant is one nobody can check. */
+export function getCurrentBrokerSpawn(sessionId: string): { spawnId: string; ready: BrokerReady | null } | null {
+  const current = readinessBySession.get(sessionId);
+  return current === undefined ? null : { spawnId: current.spawnId, ready: current.ready };
 }
 
 /** Readiness of the NAMED spawn, or `null` when the host has moved on to a
