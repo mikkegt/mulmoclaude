@@ -304,6 +304,7 @@ function buildAgentInput(
     activePlugins,
     mcpConfigPath: hasMcp ? mcpPaths.argPath : undefined,
     startMarkerPath: hasMcp ? startMarkerPath : undefined,
+    spawnId: hasMcp ? spawnId : undefined,
     extraAllowedTools: [...settings.extraAllowedTools, ...userServerAllowedTools],
     effortLevel: settings.effortLevel,
     abortSignal,

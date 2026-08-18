@@ -40,6 +40,9 @@ export interface AgentInput {
    *  through its own (container) path; a backend that spawns the broker reads
    *  this one to tell "the process launched" from "it never did". */
   startMarkerPath?: string | undefined;
+  /** Identity of the broker this turn spawns. The marker must contain it, so a
+   *  file merely pre-created at that path does not read as a broker. */
+  spawnId?: string | undefined;
   /** Extra allowed-tool names from settings + user MCP servers. */
   extraAllowedTools: string[];
   /** Reasoning effort from settings (#1323). Undefined → flag omitted. */

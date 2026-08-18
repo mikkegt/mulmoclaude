@@ -10,7 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
-import { lstatSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -181,6 +181,8 @@ interface TurnMcpContext {
   /** Host-side path of the broker's start marker, when this turn has a broker
    *  (#2842). Read once, after the CLI exits. */
   startMarkerPath?: string | undefined;
+  /** What that marker must contain to count. */
+  spawnId?: string | undefined;
 }
 
 // Did the broker PROCESS ever exist? Answered by two independent signals,
@@ -191,16 +193,33 @@ interface TurnMcpContext {
 // Read after the CLI exits, so this costs nothing on a healthy turn.
 function brokerEverStarted(turn: TurnMcpContext): boolean {
   if (getBrokerStarted(turn.chatSessionId)) return true;
-  return turn.startMarkerPath !== undefined && isRegularFile(turn.startMarkerPath);
+  if (turn.startMarkerPath === undefined || turn.spawnId === undefined) return false;
+  return markerHolds(turn.startMarkerPath, turn.spawnId);
 }
 
-/** `lstat` rather than `existsSync`, and a regular file rather than any entry:
- *  the marker sits in a directory the sandboxed agent can write, so a symlink
- *  planted at that path would otherwise report a broker that never ran as
- *  having started — the one thing this signal is asked to be right about. */
-function isRegularFile(filePath: string): boolean {
+/** Longest a marker may be and still be read. It holds one uuid; anything
+ *  larger is not one, and the cap keeps a planted file from being read whole. */
+const MARKER_MAX_BYTES = 128;
+
+/** Does the marker say THIS broker wrote it?
+ *
+ *  `lstat` rather than `existsSync`, and a regular file rather than any entry,
+ *  because a symlink planted at that path would otherwise report a broker that
+ *  never ran as having started. The content check rules out the cheaper version
+ *  of the same trick — a file merely pre-created at the path (Codex review on
+ *  #2932).
+ *
+ *  It does NOT make the signal unforgeable, and cannot: under Docker the marker
+ *  path, the spawn id, and the bearer token all live in the per-session MCP
+ *  config inside the workspace mount, so anything that can plant the file can
+ *  also read what to put in it — or POST the beacon directly. This is a
+ *  diagnostic that nothing acts on (the fail-fast this signal was built for was
+ *  measured and dropped), so the bar is "not wrong by accident", not "cannot be
+ *  lied to by the sandbox about its own turn". */
+export function markerHolds(markerPath: string, spawnId: string): boolean {
   try {
-    return lstatSync(filePath).isFile();
+    if (!lstatSync(markerPath).isFile()) return false;
+    return readFileSync(markerPath, "utf-8").slice(0, MARKER_MAX_BYTES).trim() === spawnId;
   } catch {
     return false;
   }
@@ -391,7 +410,7 @@ async function* runClaudeAgent(input: AgentInput): AsyncGenerator<AgentEvent> {
   try {
     yield* readAgentEvents(
       proc,
-      { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined, startMarkerPath: input.startMarkerPath },
+      { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined, startMarkerPath: input.startMarkerPath, spawnId: input.spawnId },
       input.abortSignal,
     );
   } finally {
