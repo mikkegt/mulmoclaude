@@ -861,6 +861,7 @@ so read these three before forming a theory:
 | `[mcp] broker ready bootMs=… initializeMs=…` | The broker DID connect, and how long it took. `broker cold boot is slow` replaces it past 5 s. |
 | `brokerEverReady=false reason=never-ready` on the retry warn | No beacon arrived for that chat, and the host kept looking until the beacon's own delivery budget was spent — the broker did not come up at all. The turn is NOT replayed: a replay would sit out another full connect wait and end in the same error. |
 | `reason=ready-during-wait` on the retry warn | The beacon arrived while the host waited, so the broker lost the race by a moment and IS connected now. The turn is replayed, which is what fixes this one. |
+| `brokerEverStarted=` on the `MCP tools were unavailable` warn | Whether the broker PROCESS ever existed, which is a different question from whether it answered. `true` with `brokerEverReady=false` means it launched and never finished booting — the boot is the problem (the mount, the `tsx` path). `false` means it never launched — the spawn is the problem. Diagnostic only, and not authenticated: under Docker everything needed to forge it sits in the per-session MCP config inside the workspace mount, so read it as evidence about a healthy install rather than as proof against a hostile one. |
 
 ### Fix
 
@@ -869,12 +870,23 @@ so read these three before forming a theory:
   published launchers have shipped the bundle since 1.9.0.
 - `broker ready` present with a small `initializeMs`, failing anyway → it is the startup race,
   not the boot. See the scheduled-run section above.
-- `brokerEverReady=false` with no `broker ready` line anywhere → the broker never started. That
-  is the permanent load failure; check the `Cannot find module` section. The host stops after one
-  attempt here, so the cost is ONE connect wait plus a few seconds instead of two connect waits —
-  the first wait still happens, because nothing can tell the broker is not coming until the CLI
-  gives up on it, and the host then keeps looking for the beacon a little longer before concluding
-  it will never arrive.
+- `brokerEverStarted=false` → the broker process never launched. That is the permanent load
+  failure; check the `Cannot find module` section. This one surfaces fast on its own: the CLI
+  notices a broker it could not spawn within seconds rather than waiting out its connect ceiling,
+  so a turn that fails QUICKLY in this shape is the diagnosis, not a second symptom.
+- `brokerEverStarted=true` with `brokerEverReady=false` → the process launched and the BOOT is
+  what did not finish. Two sub-cases, and the elapsed time separates them: a boot still running
+  when the CLI gave up eats the whole connect wait (fix the boot — the `broker=tsx` bullet above
+  — rather than waiting longer), while a boot that CRASHED fails as fast as a missing binary. The
+  crash reason is not in this log by construction: Claude CLI owns the broker's stderr, so read
+  the `Cannot find module` section for what to check.
+- Either way the turn is NOT replayed, so the cost is ONE connect wait rather than two. The first
+  wait still happens — nothing can tell the broker is not coming until the CLI gives up on it —
+  and the host then keeps looking for the beacon a few seconds longer before concluding it never
+  will, so that a beacon merely still in flight is not mistaken for a broker that never answered.
+- Do NOT read a missing `broker ready` line on its own as "the broker never started" — before
+  `brokerEverStarted` existed, that inference was the only one available and it is wrong for
+  exactly the case that costs the most time.
 - Old or unrecorded `claudeCodeVersion` alongside any of these → rule out the frozen CLI first.
 
 ---

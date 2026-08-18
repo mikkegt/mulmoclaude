@@ -37,6 +37,11 @@ interface SessionReadiness {
   /** The broker the host is currently waiting on. A beacon carrying anything
    *  else belongs to an attempt that has already been replaced. */
   spawnId: string;
+  /** The process said it exists, before loading anything (#2842's start
+   *  beacon). Separate from `ready` because the gap between the two IS the cold
+   *  boot: "started but not ready" is a broker worth waiting for, while
+   *  "neither" is one that never launched. */
+  started: boolean;
   ready: BrokerReady | null;
 }
 
@@ -57,10 +62,59 @@ export function recordBrokerReady(sessionId: string, spawnId: string, ready: Bro
   return true;
 }
 
-/** `null` means no beacon arrived for the CURRENT spawn — either the broker
- *  never got far enough to send one, or it is still booting. */
-export function getBrokerReady(sessionId: string): BrokerReady | null {
-  return readinessBySession.get(sessionId)?.ready ?? null;
+/** Record the start beacon, unless it belongs to a superseded broker. Same
+ *  spawn-id gate as `recordBrokerReady`, for the same reason: a straggler from
+ *  the attempt that just failed must not vouch for the one replacing it. */
+export function recordBrokerStarting(sessionId: string, spawnId: string): boolean {
+  const current = readinessBySession.get(sessionId);
+  if (current === undefined || current.spawnId !== spawnId) return false;
+  current.started = true;
+  return true;
+}
+
+/** Whether the named spawn's broker process ever announced itself.
+ *
+ *  Keyed by SPAWN, not by session alone. A session's key is stable for the
+ *  whole conversation while the broker respawns per turn — and the replay path
+ *  spawns a second broker for the SAME session moments after the first turn
+ *  fails. Answering from the session would let that later spawn vouch for the
+ *  attempt that already failed, which is the diagnosis reversed (Codex review
+ *  on #2932). The marker half is spawn-scoped by construction (the id is in the
+ *  file); this makes the beacon half agree. */
+export function getBrokerStarted(sessionId: string, spawnId: string): boolean {
+  const current = readinessBySession.get(sessionId);
+  return current?.spawnId === spawnId && current.started;
+}
+
+/** Which spawn the host is currently waiting on, and its reading so far.
+ *
+ *  For the recovery path, which has no spawn id of its own — the turn's is
+ *  created inside `runAgent` and never leaves it. Capturing the id HERE, before
+ *  the wait, is what lets the rest of that path ask by spawn id: it pins the
+ *  question to the spawn whose turn actually failed, instead of to whatever
+ *  spawn is current when the answer is read (Codex review on #2932).
+ *
+ *  A second run for one chat session is already refused (`beginRun` 409s), so
+ *  today no other spawn can appear during that wait. This does not rely on
+ *  that: the gate is somewhere else and could move, and a diagnosis that is
+ *  only correct because of a distant invariant is one nobody can check. */
+export function getCurrentBrokerSpawn(sessionId: string): { spawnId: string; ready: BrokerReady | null } | null {
+  const current = readinessBySession.get(sessionId);
+  return current === undefined ? null : { spawnId: current.spawnId, ready: current.ready };
+}
+
+/** Readiness of the NAMED spawn, or `null` when the host has moved on to a
+ *  later one.
+ *
+ *  Only one spawn per session is tracked, so a replay's broker displaces its
+ *  predecessor's reading rather than sitting beside it. Answering `null` for a
+ *  displaced spawn is the point: the alternative is answering with the
+ *  REPLACEMENT's readiness, which would let a healthy second broker report that
+ *  the attempt it replaced had come up — the diagnosis backwards (Codex review
+ *  on #2932). */
+export function getBrokerReady(sessionId: string, spawnId: string): BrokerReady | null {
+  const current = readinessBySession.get(sessionId);
+  return current?.spawnId === spawnId ? current.ready : null;
 }
 
 /** Everything a broker spawn owes the readiness state: make this broker the one
@@ -78,7 +132,7 @@ export function getBrokerReady(sessionId: string): BrokerReady | null {
  *  spawned command disagree. */
 export function beginBrokerSpawn(sessionId: string, spawnId: string, kind: BrokerReady["kind"] | null): BrokerReady["kind"] | "none" {
   readinessBySession.delete(sessionId);
-  readinessBySession.set(sessionId, { spawnId, ready: null });
+  readinessBySession.set(sessionId, { spawnId, started: false, ready: null });
   // Insertion order is oldest-first, so the first key is the one to drop.
   const oldest = readinessBySession.keys().next();
   if (readinessBySession.size > MAX_TRACKED_SESSIONS && !oldest.done) {

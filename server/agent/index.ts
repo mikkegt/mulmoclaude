@@ -14,6 +14,7 @@ import {
   getActivePlugins,
   prepareUserServers,
   resolveBrokerSpawn,
+  resolveBrokerStartMarkerPaths,
   resolveMcpConfigPaths,
   userServerAllowedToolNames,
   type BrokerSpawn,
@@ -71,7 +72,10 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentEvent
     try {
       yield* prepared.backend.runAgent(prepared.agentInput);
     } finally {
-      if (prepared.hasMcp) unlink(prepared.hostMcpPath).catch(() => {});
+      if (prepared.hasMcp) {
+        unlink(prepared.hostMcpPath).catch(() => {});
+        unlink(prepared.hostStartMarkerPath).catch(() => {});
+      }
     }
   } finally {
     // Tear down any host-side stdio→HTTP shims (#1421 Phase B) —
@@ -102,6 +106,10 @@ interface PreparedAgentRun {
   agentInput: AgentInput;
   hasMcp: boolean;
   hostMcpPath: string;
+  /** Host-side path of the broker's start marker (#2842) — the same file the
+   *  broker writes through its container path. Removed with the MCP config so
+   *  a per-spawn file does not accumulate. */
+  hostStartMarkerPath: string;
 }
 
 // Assemble everything the backend needs for one turn, in the same
@@ -133,9 +141,26 @@ async function prepareAgentRun(input: RunAgentInput, deps: AgentRunDeps): Promis
   // is what the host waits on, so a beacon from a replaced attempt (the 3 s
   // broker retry) cannot be credited to the attempt that replaced it.
   const spawnId = makeUuid();
-  const { mcpPaths, mcpServerNames } = await writeMcpConfig(input, deps, hasMcp, broker, spawnId);
-  const { backend, agentInput } = buildAgentInput(input, deps, { systemPrompt, hasMcp, mcpPaths, mcpServerNames, broker, spawnId });
-  return { backend, agentInput, hasMcp, hostMcpPath: mcpPaths.hostPath };
+  // Resolved before the config is written, because the broker learns the path
+  // from that config's env — and the host has to keep its own side of the same
+  // path to read the marker and to remove it afterwards.
+  const markerPaths = resolveBrokerStartMarkerPaths({
+    workspacePath: input.workspacePath,
+    sessionId: input.sessionId,
+    useDocker,
+    spawnId,
+  });
+  const { mcpPaths, mcpServerNames } = await writeMcpConfig(input, deps, hasMcp, broker, spawnId, markerPaths.argPath);
+  const { backend, agentInput } = buildAgentInput(input, deps, {
+    systemPrompt,
+    hasMcp,
+    mcpPaths,
+    mcpServerNames,
+    broker,
+    spawnId,
+    startMarkerPath: markerPaths.hostPath,
+  });
+  return { backend, agentInput, hasMcp, hostMcpPath: mcpPaths.hostPath, hostStartMarkerPath: markerPaths.hostPath };
 }
 
 // Load the memory snapshot and assemble the full system prompt for
@@ -172,6 +197,7 @@ async function writeMcpConfig(
   hasMcp: boolean,
   broker: BrokerSpawn | null,
   spawnId: string,
+  startMarkerPath: string,
 ): Promise<{ mcpPaths: McpPaths; mcpServerNames: string[] }> {
   const { workspacePath, sessionId, port } = input;
   const { activePlugins, useDocker, userServers } = deps;
@@ -195,6 +221,7 @@ async function writeMcpConfig(
       useDocker,
       userServers,
       spawnId,
+      startMarkerPath,
       ...(broker ? { broker } : {}),
     });
     mcpServerNames = Object.keys(mcpConfig.mcpServers).sort();
@@ -207,40 +234,63 @@ async function writeMcpConfig(
 
 // Read per-invocation settings, resolve the active backend, log the
 // spawn, and assemble the backend-agnostic AgentInput for this turn.
-function buildAgentInput(
-  input: RunAgentInput,
-  deps: AgentRunDeps,
-  args: { systemPrompt: string; hasMcp: boolean; mcpPaths: McpPaths; mcpServerNames: string[]; broker: BrokerSpawn | null; spawnId: string },
-): { backend: LLMBackend; agentInput: AgentInput } {
-  const { message, role, workspacePath, sessionId, port, claudeSessionId, abortSignal, attachments, userTimezone } = input;
-  const { activePlugins, useDocker, userServers } = deps;
-  const { systemPrompt, hasMcp, mcpPaths, mcpServerNames, broker, spawnId } = args;
-
-  // Per-invocation read so allowedTools / MCP-server changes apply without a server restart.
-  const settings = loadSettings();
-  const userServerAllowedTools = userServerAllowedToolNames(userServers, useDocker);
-
-  // Boolean presence flags only — never write raw sessionId into long-lived log sinks.
-  const backend = getActiveBackend();
+// The line that marks the start of a turn. Boolean presence flags only — never
+// write a raw sessionId into long-lived log sinks.
+function logSpawn(args: {
+  backendId: string;
+  roleId: string;
+  useDocker: boolean;
+  hasMcp: boolean;
+  claudeSessionId: string | undefined;
+  sessionId: string;
+  spawnId: string;
+  broker: BrokerSpawn | null;
+  mcpServerNames: string[];
+}): void {
   const spawnLog: Record<string, unknown> = {
-    backend: backend.id,
-    roleId: role.id,
-    useDocker,
-    hasMcp,
-    resumed: Boolean(claudeSessionId),
-    hasSessionId: Boolean(sessionId),
+    backend: args.backendId,
+    roleId: args.roleId,
+    useDocker: args.useDocker,
+    hasMcp: args.hasMcp,
+    resumed: Boolean(args.claudeSessionId),
+    hasSessionId: Boolean(args.sessionId),
     // Which broker this turn spawns — the same object the MCP config was built
     // from, so the two cannot disagree. On the log line that already marks the
     // start of a turn, so the cold-boot cost of a `tsx` install is attributable
     // from the log alone rather than by inspecting the filesystem (#2842).
     // Also resets this session's readiness — see `beginBrokerSpawn`.
-    broker: beginBrokerSpawn(sessionId, spawnId, broker?.kind ?? null),
+    broker: beginBrokerSpawn(args.sessionId, args.spawnId, args.broker?.kind ?? null),
   };
   // --debug only: kept off the default log to avoid leaking user MCP server names into long-lived sinks.
-  if (process.argv.includes("--debug") && hasMcp) {
-    spawnLog.mcpServers = mcpServerNames;
+  if (process.argv.includes("--debug") && args.hasMcp) {
+    spawnLog.mcpServers = args.mcpServerNames;
   }
   log.info("agent", "spawning agent", spawnLog);
+}
+
+function buildAgentInput(
+  input: RunAgentInput,
+  deps: AgentRunDeps,
+  args: {
+    systemPrompt: string;
+    hasMcp: boolean;
+    mcpPaths: McpPaths;
+    mcpServerNames: string[];
+    broker: BrokerSpawn | null;
+    spawnId: string;
+    startMarkerPath: string;
+  },
+): { backend: LLMBackend; agentInput: AgentInput } {
+  const { message, role, workspacePath, sessionId, port, claudeSessionId, abortSignal, attachments, userTimezone } = input;
+  const { activePlugins, useDocker, userServers } = deps;
+  const { systemPrompt, hasMcp, mcpPaths, mcpServerNames, broker, spawnId, startMarkerPath } = args;
+
+  // Per-invocation read so allowedTools / MCP-server changes apply without a server restart.
+  const settings = loadSettings();
+  const userServerAllowedTools = userServerAllowedToolNames(userServers, useDocker);
+
+  const backend = getActiveBackend();
+  logSpawn({ backendId: backend.id, roleId: role.id, useDocker, hasMcp, claudeSessionId, sessionId, spawnId, broker, mcpServerNames });
 
   const agentInput: AgentInput = {
     systemPrompt,
@@ -253,6 +303,8 @@ function buildAgentInput(
     attachments,
     activePlugins,
     mcpConfigPath: hasMcp ? mcpPaths.argPath : undefined,
+    startMarkerPath: hasMcp ? startMarkerPath : undefined,
+    spawnId: hasMcp ? spawnId : undefined,
     extraAllowedTools: [...settings.extraAllowedTools, ...userServerAllowedTools],
     effortLevel: settings.effortLevel,
     abortSignal,

@@ -10,6 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
+import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -17,7 +18,7 @@ import { resolveSandboxAuth } from "../sandboxMounts.js";
 import { getCachedReferenceDirs, referenceDirMountArgs } from "../../workspace/reference-dirs.js";
 import { createStreamParser, type AgentEvent, type RawStreamEvent } from "../stream.js";
 import { createMcpFailureMonitor } from "../mcpFailureMonitor.js";
-import { getBrokerReady } from "../brokerReadiness.js";
+import { getBrokerReady, getBrokerStarted } from "../brokerReadiness.js";
 import { BUILTIN_MCP_TOOL_PREFIX } from "../activeTools.js";
 import { isMcpBrokerNotReadyError } from "../mcpBrokerFailover.js";
 import { log } from "../../system/logger/index.js";
@@ -177,6 +178,89 @@ function logAgentStderr(line: string): void {
 interface TurnMcpContext {
   chatSessionId: string;
   mcpConfigured: boolean;
+  /** Host-side path of the broker's start marker, when this turn has a broker
+   *  (#2842). Read once, after the CLI exits. */
+  startMarkerPath?: string | undefined;
+  /** What that marker must contain to count. */
+  spawnId?: string | undefined;
+}
+
+// Did the broker PROCESS ever exist? Answered by two independent signals,
+// because they fail for unrelated reasons: a marker file the broker writes
+// synchronously before loading anything, and an HTTP beacon it fires at the
+// same moment. See `mcp-start-beacon.mjs` for why both.
+//
+// Read after the CLI exits, so this costs nothing on a healthy turn.
+function brokerEverStarted(turn: TurnMcpContext): boolean {
+  // Both halves are scoped to THIS spawn. A replay starts a second broker for
+  // the same session within seconds, and either half answered per-session would
+  // credit it to the attempt that already failed.
+  if (turn.spawnId === undefined) return false;
+  if (getBrokerStarted(turn.chatSessionId, turn.spawnId)) return true;
+  return turn.startMarkerPath !== undefined && markerHolds(turn.startMarkerPath, turn.spawnId);
+}
+
+/** Longest a marker may be and still be read. It holds one uuid; anything
+ *  larger is not one. Enforced by the READ — a fixed buffer — rather than by
+ *  slicing afterwards, or a planted multi-gigabyte file would be pulled into
+ *  memory in full before the cap applied (Codex review on #2932), which is the
+ *  trap `docs/large-file-reading.md` exists for. */
+export const MARKER_MAX_BYTES = 128;
+
+/** Does the marker say THIS broker wrote it?
+ *
+ *  `lstat` rather than `existsSync`, and a regular file rather than any entry,
+ *  because a symlink planted at that path would otherwise report a broker that
+ *  never ran as having started. The content check rules out the cheaper version
+ *  of the same trick — a file merely pre-created at the path (Codex review on
+ *  #2932).
+ *
+ *  It does NOT make the signal unforgeable, and cannot: under Docker the marker
+ *  path, the spawn id, and the bearer token all live in the per-session MCP
+ *  config inside the workspace mount, so anything that can plant the file can
+ *  also read what to put in it — or POST the beacon directly. This is a
+ *  diagnostic that nothing acts on (the fail-fast this signal was built for was
+ *  measured and dropped), so the bar is "not wrong by accident", not "cannot be
+ *  lied to by the sandbox about its own turn". */
+export function markerHolds(markerPath: string, spawnId: string): boolean {
+  // Three flags, each closing a way this path can be turned against the host —
+  // it is inside the workspace mount, so the sandbox chooses what is there:
+  //
+  //  - `O_NOFOLLOW` on the OPEN rather than an `lstat` first, because the
+  //    two-step version can be raced.
+  //  - `O_NONBLOCK`, because opening a FIFO waits for a writer FOREVER, and
+  //    this open is synchronous — a planted pipe would freeze the event loop,
+  //    not merely mislead a log line (Codex review on #2932; reproduced:
+  //    `openSync` never returned and a pending timer never fired).
+  //  - `fstat` on the descriptor we are about to read, so anything that is not
+  //    a regular file is refused after the open rather than read from.
+  //
+  // The first two are POSIX-only; on Windows the constants are absent and fall
+  // out of the mask, where neither symlinks-without-privilege nor FIFOs at a
+  // path like this arise, and the `fstat` check still applies.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+  let handle: number;
+  try {
+    handle = openSync(markerPath, flags);
+  } catch {
+    return false;
+  }
+  try {
+    // Size as well as type. Reading only the first `MARKER_MAX_BYTES` bounds
+    // the read, but it does not REJECT a larger file: an id followed by
+    // whitespace inside the cap, then arbitrary content past it, survives the
+    // `trim()` below. Our own marker is one uuid, so anything larger is not one
+    // (CodeRabbit review on #2932).
+    const stat = fstatSync(handle);
+    if (!stat.isFile() || stat.size > MARKER_MAX_BYTES) return false;
+    const buffer = Buffer.alloc(MARKER_MAX_BYTES);
+    const bytes = readSync(handle, buffer, 0, MARKER_MAX_BYTES, 0);
+    return buffer.subarray(0, bytes).toString("utf-8").trim() === spawnId;
+  } catch {
+    return false;
+  } finally {
+    closeSync(handle);
+  }
 }
 
 // `aborted` is the abort SIGNAL, not `isAbortCausedExit`: the question here is
@@ -184,13 +268,25 @@ interface TurnMcpContext {
 // ours. A cancel that lets the CLI exit 0 cleanly is still a turn that never got
 // to use its tools, and `isAbortCausedExit` reads that one as a normal finish.
 function logIfMcpUnavailable(turn: TurnMcpContext, builtinMcpToolsCalled: number, aborted: boolean): void {
-  const brokerEverReady = getBrokerReady(turn.chatSessionId) !== null;
+  // Spawn-scoped like `brokerEverStarted`, and for the same reason: this runs
+  // after the CLI exited, by which time a replay may have started a second
+  // broker for the same session. A session-keyed read would let that one
+  // suppress the diagnosis for the attempt that actually failed.
+  const brokerEverReady = turn.spawnId !== undefined && getBrokerReady(turn.chatSessionId, turn.spawnId) !== null;
   if (!shouldWarnMcpUnavailable({ mcpConfigured: turn.mcpConfigured, aborted, brokerEverReady, builtinMcpToolsCalled })) return;
+  // `brokerEverStarted` splits this warn's one symptom into the two failures it
+  // was hiding, and they are fixed in different places: a broker that launched
+  // and never answered is the boot (the mount, the `tsx` path), while one that
+  // never launched is the spawn (the command, the paths, a missing module).
+  const started = brokerEverStarted(turn);
   log.warn("agent", "MCP tools were unavailable this turn — the broker never reported ready and none of its tools ran", {
     chatSessionId: turn.chatSessionId,
+    brokerEverStarted: started,
     brokerEverReady,
     builtinMcpToolsCalled,
-    hint: "Look for `[mcp] broker ready` in server/system/logs/; on Docker also check the sandbox volume mounts.",
+    hint: started
+      ? "The broker process started and never answered `initialize` — it is still loading (see `broker=`; `tsx` is the slow path) or it died while loading. Its own error is not in this log: Claude CLI owns its stderr."
+      : "The broker process never started — check the spawn command and the paths it resolves to.",
   });
 }
 
@@ -354,7 +450,11 @@ async function* runClaudeAgent(input: AgentInput): AsyncGenerator<AgentEvent> {
   input.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
   try {
-    yield* readAgentEvents(proc, { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined }, input.abortSignal);
+    yield* readAgentEvents(
+      proc,
+      { chatSessionId: input.sessionId, mcpConfigured: input.mcpConfigPath !== undefined, startMarkerPath: input.startMarkerPath, spawnId: input.spawnId },
+      input.abortSignal,
+    );
   } finally {
     input.abortSignal?.removeEventListener("abort", onAbort);
     if (!proc.killed) proc.kill();

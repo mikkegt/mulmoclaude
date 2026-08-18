@@ -31,7 +31,7 @@ import {
   type RecoveryKind,
   type RetryBudgets,
 } from "../../agent/retryPolicy.js";
-import { getBrokerReady } from "../../agent/brokerReadiness.js";
+import { getBrokerReady, getCurrentBrokerSpawn } from "../../agent/brokerReadiness.js";
 import {
   recordPushReply,
   splitSkillAndReply,
@@ -962,7 +962,13 @@ async function recoverStaleSession(chatSessionId: string, decoratedMessage: stri
 type BrokerRecoveryOutcome = "replay" | "give-up" | "aborted";
 
 async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSignal): Promise<BrokerRecoveryOutcome> {
-  const readyBeforeWait = getBrokerReady(chatSessionId);
+  // Capture WHICH spawn this is before waiting, then ask about that one on both
+  // sides. The turn's own spawn id is created inside `runAgent` and never leaves
+  // it, so "the spawn we are waiting on" has to be read from the readiness
+  // state — and reading it once, up front, is what stops the answer from
+  // drifting to a later spawn while the wait runs (Codex review on #2932).
+  const spawn = getCurrentBrokerSpawn(chatSessionId);
+  const readyBeforeWait = spawn?.ready ?? null;
   pushSessionEvent(chatSessionId, {
     type: EVENT_TYPES.status,
     message: "Tools are still starting up…",
@@ -973,7 +979,11 @@ async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSi
   // until the beacon has run out of delivery attempts, and refusing a replay on
   // a beacon still in flight would break the recovery this wait exists for.
   const paused = abortableSleep(BROKER_RECONNECT_WAIT_MS, abortSignal);
-  const ready = await awaitBrokerReady(() => getBrokerReady(chatSessionId), BROKER_READY_DECISION_WINDOW_MS, abortSignal);
+  // Asked about the spawn captured above, so a later one cannot answer for it.
+  // With no spawn on record there is nothing to wait for — that is a turn with
+  // no broker, and `null` is the honest reading.
+  const ready =
+    spawn === null ? null : await awaitBrokerReady(() => getBrokerReady(chatSessionId, spawn.spawnId), BROKER_READY_DECISION_WINDOW_MS, abortSignal);
   await paused;
   // A stop cuts both short, so "no beacon yet" says nothing about the broker
   // here. Judging anyway would log a diagnosis for a turn the user cancelled —
