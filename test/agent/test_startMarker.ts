@@ -14,8 +14,9 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeStartMarker } from "../../server/agent/mcp-start-beacon.mjs";
 import { markerHolds } from "../../server/agent/backend/claude-code.js";
 
@@ -24,6 +25,23 @@ import { markerHolds } from "../../server/agent/backend/claude-code.js";
 // failing for a reason that is not about this code.
 const SYMLINK_SKIP = platform() === "win32" ? "symlinks need privilege on Windows, and O_NOFOLLOW does not exist there" : false;
 const FIFO_SKIP = platform() === "win32" ? "no mkfifo, and a named pipe is not reachable at a path like this" : false;
+
+/** How long the child gets before the parent calls the open blocked. Generous
+ *  next to the sub-second answer a working `O_NONBLOCK` gives, because the
+ *  child pays a cold `tsx` start first. */
+const FIFO_CHILD_TIMEOUT_MS = 20_000;
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/** A one-line program that calls the REAL `markerHolds` on `markerPath`. The
+ *  point is to exercise the shipped function, not a copy of its open flags. */
+function markerHoldsProbe(markerPath: string): string {
+  const moduleUrl = pathToFileURL(path.join(REPO_ROOT, "server", "agent", "backend", "claude-code.ts")).href;
+  return [
+    `const { markerHolds } = await import(${JSON.stringify(moduleUrl)});`,
+    `process.stdout.write(markerHolds(${JSON.stringify(markerPath)}, "spawn-abc") ? "true" : "false");`,
+  ].join("\n");
+}
 
 let root = "";
 
@@ -123,12 +141,25 @@ describe("markerHolds", () => {
   // before the fix — `openSync` never returned and a pending timer never fired
   // (Codex review on #2932).
   //
-  // The 5 s timeout is the assertion: without `O_NONBLOCK` this test does not
-  // fail, it never finishes.
-  it("rejects a FIFO without blocking", { skip: FIFO_SKIP, timeout: 5000 }, () => {
+  // Run in a CHILD process, with the deadline enforced by the parent. `node:test`
+  // cannot interrupt a synchronous blocking callback, so an in-process version
+  // of this test does not fail when the fix is missing — it hangs the whole
+  // runner, reporting zero tests (CodeRabbit review on #2932, which proved the
+  // point with a standalone script). A killed child is an assertion; a hung
+  // runner is not.
+  it("rejects a FIFO without blocking", { skip: FIFO_SKIP, timeout: FIFO_CHILD_TIMEOUT_MS * 2 }, () => {
     const fifo = path.join(root, "planted-fifo");
     execFileSync("mkfifo", [fifo]);
-    assert.equal(markerHolds(fifo, "spawn-abc"), false);
+
+    const child = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", markerHoldsProbe(fifo)], {
+      timeout: FIFO_CHILD_TIMEOUT_MS,
+      encoding: "utf-8",
+      cwd: REPO_ROOT,
+    });
+
+    assert.equal(child.signal, null, `the open blocked: the child had to be killed after ${FIFO_CHILD_TIMEOUT_MS}ms`);
+    assert.equal(child.status, 0, `child failed: ${child.stderr}`);
+    assert.equal(child.stdout.trim(), "false");
   });
 
   it("rejects a directory", () => {
