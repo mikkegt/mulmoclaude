@@ -1090,14 +1090,23 @@ async function runAgentStreamWithFailover(args: FailoverStreamArgs, eventCtx: Ev
     }
 
     budgets.broker--;
-    if ((await recoverBrokerNotReady(chatSessionId, abortSignal)) !== "give-up") {
+    const outcome = await recoverBrokerNotReady(chatSessionId, abortSignal);
+    if (outcome === "replay") {
       discardAbortedPass(eventCtx);
       continue;
     }
-    // Refused: the broker never came up, so this pass is the last one and its
-    // streamed text is kept rather than discarded — same as the second attempt
-    // used to be. The error it died on was swallowed for a replay that is no
-    // longer happening, so surface it now (#2842).
+    // Every path below this line ends the turn, so the pass's streamed text is
+    // the last there will be and is kept rather than discarded. Discarding is
+    // only correct ahead of a replay, whose consolidated jsonl entry it would
+    // otherwise be concatenated into.
+    //
+    // A stop gets the same treatment an ordinary cancel does, which keeps what
+    // was streamed before it (`flushTextAccumulator` at the end of the run).
+    // Discarding here made a cancel during this particular wait the one cancel
+    // that silently dropped the reply (CodeRabbit review on #2931).
+    if (outcome === "aborted") break;
+    // Refused: the broker never came up, so the error the pass died on was
+    // swallowed for a replay that is no longer happening. Surface it (#2842).
     if (pass.swallowed) await handleAgentEvent(pass.swallowed, eventCtx);
     didError = true;
     break;

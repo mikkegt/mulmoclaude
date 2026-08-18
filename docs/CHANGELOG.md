@@ -82,7 +82,8 @@ one yet at the instant the turn fails — deciding on the first reading alone
 would refuse exactly the replay that works. Reading it again after the wait
 separates them: a beacon that arrived during the wait means the broker is
 connected now and the turn is replayed as before; nothing on either side means
-it is not coming, and the turn fails immediately instead. The retry warn carries
+it is not coming, and the turn fails there instead of buying a second connect
+wait first — one wait plus the 3 s pause rather than two. The retry warn carries
 the verdict (`reason=never-ready` / `ready-during-wait`), so which of the two
 happened is answerable from the log.
 
