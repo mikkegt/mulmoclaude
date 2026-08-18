@@ -72,11 +72,18 @@ export function recordBrokerStarting(sessionId: string, spawnId: string): boolea
   return true;
 }
 
-/** Whether THIS spawn's broker process ever announced itself. `false` after the
- *  start beacon's own delivery budget has elapsed means the process is not
- *  running — nothing had to load for it to answer. */
-export function getBrokerStarted(sessionId: string): boolean {
-  return readinessBySession.get(sessionId)?.started === true;
+/** Whether the named spawn's broker process ever announced itself.
+ *
+ *  Keyed by SPAWN, not by session alone. A session's key is stable for the
+ *  whole conversation while the broker respawns per turn — and the replay path
+ *  spawns a second broker for the SAME session moments after the first turn
+ *  fails. Answering from the session would let that later spawn vouch for the
+ *  attempt that already failed, which is the diagnosis reversed (Codex review
+ *  on #2932). The marker half is spawn-scoped by construction (the id is in the
+ *  file); this makes the beacon half agree. */
+export function getBrokerStarted(sessionId: string, spawnId: string): boolean {
+  const current = readinessBySession.get(sessionId);
+  return current?.spawnId === spawnId && current.started;
 }
 
 /** `null` means no beacon arrived for the CURRENT spawn — either the broker

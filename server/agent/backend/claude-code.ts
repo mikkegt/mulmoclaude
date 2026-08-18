@@ -192,9 +192,12 @@ interface TurnMcpContext {
 //
 // Read after the CLI exits, so this costs nothing on a healthy turn.
 function brokerEverStarted(turn: TurnMcpContext): boolean {
-  if (getBrokerStarted(turn.chatSessionId)) return true;
-  if (turn.startMarkerPath === undefined || turn.spawnId === undefined) return false;
-  return markerHolds(turn.startMarkerPath, turn.spawnId);
+  // Both halves are scoped to THIS spawn. A replay starts a second broker for
+  // the same session within seconds, and either half answered per-session would
+  // credit it to the attempt that already failed.
+  if (turn.spawnId === undefined) return false;
+  if (getBrokerStarted(turn.chatSessionId, turn.spawnId)) return true;
+  return turn.startMarkerPath !== undefined && markerHolds(turn.startMarkerPath, turn.spawnId);
 }
 
 /** Longest a marker may be and still be read. It holds one uuid; anything

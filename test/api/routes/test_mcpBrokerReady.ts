@@ -243,7 +243,7 @@ describe("POST /api/mcp/broker-starting", () => {
     armSpawn("chat-start");
     const res = await postStarting("chat-start", { spawnId: SPAWN });
     assert.equal(res.statusCode, 204);
-    assert.equal(getBrokerStarted("chat-start"), true);
+    assert.equal(getBrokerStarted("chat-start", SPAWN), true);
   });
 
   // Started is not ready: a broker can announce itself and then never finish
@@ -260,11 +260,11 @@ describe("POST /api/mcp/broker-starting", () => {
     armSpawn("chat-start", "spawn-2");
     const res = await postStarting("chat-start", { spawnId: "spawn-1" });
     assert.equal(res.statusCode, 204);
-    assert.equal(getBrokerStarted("chat-start"), false);
+    assert.equal(getBrokerStarted("chat-start", SPAWN), false);
   });
 
   it("reports false for a session nothing was ever recorded against", () => {
-    assert.equal(getBrokerStarted("never-seen"), false);
+    assert.equal(getBrokerStarted("never-seen", SPAWN), false);
   });
 
   it("rejects a missing session", async () => {
@@ -277,7 +277,7 @@ describe("POST /api/mcp/broker-starting", () => {
     assert.equal((await postStarting("chat-start", {})).statusCode, 400);
     assert.equal((await postStarting("chat-start", { spawnId: 7 })).statusCode, 400);
     assert.equal((await postStarting("chat-start", { spawnId: "" })).statusCode, 400);
-    assert.equal(getBrokerStarted("chat-start"), false);
+    assert.equal(getBrokerStarted("chat-start", SPAWN), false);
   });
 
   // A new spawn clears the previous one's answer, or a replay would inherit
@@ -285,8 +285,22 @@ describe("POST /api/mcp/broker-starting", () => {
   it("is cleared by the next spawn", async () => {
     armSpawn("chat-start", "spawn-1");
     await postStarting("chat-start", { spawnId: "spawn-1" });
-    assert.equal(getBrokerStarted("chat-start"), true);
+    assert.equal(getBrokerStarted("chat-start", "spawn-1"), true);
     armSpawn("chat-start", "spawn-2");
-    assert.equal(getBrokerStarted("chat-start"), false);
+    assert.equal(getBrokerStarted("chat-start", "spawn-2"), false);
+  });
+
+  // The reverse direction, and the reason the lookup takes a spawn id at all: a
+  // replay starts a second broker for the SAME session moments after the first
+  // turn failed. Asking per-session would let the healthy second spawn vouch
+  // for the attempt that already died — the diagnosis exactly backwards (Codex
+  // review on #2932).
+  it("does not let a later spawn vouch for an earlier one", async () => {
+    armSpawn("chat-start", "spawn-1");
+    // spawn-1's broker never announces itself; the turn fails and is replayed.
+    armSpawn("chat-start", "spawn-2");
+    await postStarting("chat-start", { spawnId: "spawn-2" });
+    assert.equal(getBrokerStarted("chat-start", "spawn-2"), true);
+    assert.equal(getBrokerStarted("chat-start", "spawn-1"), false);
   });
 });
