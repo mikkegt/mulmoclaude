@@ -10,7 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
-import { closeSync, constants, openSync, readSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -220,10 +220,22 @@ const MARKER_MAX_BYTES = 128;
  *  measured and dropped), so the bar is "not wrong by accident", not "cannot be
  *  lied to by the sandbox about its own turn". */
 export function markerHolds(markerPath: string, spawnId: string): boolean {
-  // `O_NOFOLLOW` on the OPEN rather than an `lstat` first: the two-step version
-  // can be raced, and this path is writable by the sandbox. POSIX only — on
-  // Windows the constant is absent and falls out of the mask.
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+  // Three flags, each closing a way this path can be turned against the host —
+  // it is inside the workspace mount, so the sandbox chooses what is there:
+  //
+  //  - `O_NOFOLLOW` on the OPEN rather than an `lstat` first, because the
+  //    two-step version can be raced.
+  //  - `O_NONBLOCK`, because opening a FIFO waits for a writer FOREVER, and
+  //    this open is synchronous — a planted pipe would freeze the event loop,
+  //    not merely mislead a log line (Codex review on #2932; reproduced:
+  //    `openSync` never returned and a pending timer never fired).
+  //  - `fstat` on the descriptor we are about to read, so anything that is not
+  //    a regular file is refused after the open rather than read from.
+  //
+  // The first two are POSIX-only; on Windows the constants are absent and fall
+  // out of the mask, where neither symlinks-without-privilege nor FIFOs at a
+  // path like this arise, and the `fstat` check still applies.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
   let handle: number;
   try {
     handle = openSync(markerPath, flags);
@@ -231,11 +243,11 @@ export function markerHolds(markerPath: string, spawnId: string): boolean {
     return false;
   }
   try {
+    if (!fstatSync(handle).isFile()) return false;
     const buffer = Buffer.alloc(MARKER_MAX_BYTES);
     const bytes = readSync(handle, buffer, 0, MARKER_MAX_BYTES, 0);
     return buffer.subarray(0, bytes).toString("utf-8").trim() === spawnId;
   } catch {
-    // A directory opens fine and fails on read; so does anything unreadable.
     return false;
   } finally {
     closeSync(handle);

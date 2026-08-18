@@ -14,6 +14,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { writeStartMarker } from "../../server/agent/mcp-start-beacon.mjs";
 import { markerHolds } from "../../server/agent/backend/claude-code.js";
@@ -22,6 +23,7 @@ import { markerHolds } from "../../server/agent/backend/claude-code.js";
 // runner does not have — so the symlink cases are POSIX-only rather than
 // failing for a reason that is not about this code.
 const SYMLINK_SKIP = platform() === "win32" ? "symlinks need privilege on Windows, and O_NOFOLLOW does not exist there" : false;
+const FIFO_SKIP = platform() === "win32" ? "no mkfifo, and a named pipe is not reachable at a path like this" : false;
 
 let root = "";
 
@@ -113,6 +115,20 @@ describe("markerHolds", () => {
 
   it("rejects a missing marker", () => {
     assert.equal(markerHolds(path.join(root, "nope"), "spawn-abc"), false);
+  });
+
+  // The sharpest of the planted-entry cases, and the only one that hangs rather
+  // than misleads: opening a FIFO waits for a writer forever, and this open is
+  // synchronous, so it freezes the event loop rather than the turn. Reproduced
+  // before the fix — `openSync` never returned and a pending timer never fired
+  // (Codex review on #2932).
+  //
+  // The 5 s timeout is the assertion: without `O_NONBLOCK` this test does not
+  // fail, it never finishes.
+  it("rejects a FIFO without blocking", { skip: FIFO_SKIP, timeout: 5000 }, () => {
+    const fifo = path.join(root, "planted-fifo");
+    execFileSync("mkfifo", [fifo]);
+    assert.equal(markerHolds(fifo, "spawn-abc"), false);
   });
 
   it("rejects a directory", () => {
