@@ -21,7 +21,16 @@ import { runAgent } from "../../agent/index.js";
 import { INJECTED_TEXT } from "../../agent/stream.js";
 import { notifyTaskFinished } from "../../agent/webPush.js";
 import { buildTranscriptPreamble } from "../../agent/resumeFailover.js";
-import { abortableSleep, BROKER_RECONNECT_WAIT_MS, detectRecovery, judgeBrokerReplay, type RecoveryKind, type RetryBudgets } from "../../agent/retryPolicy.js";
+import {
+  abortableSleep,
+  awaitBrokerReady,
+  BROKER_READY_DECISION_WINDOW_MS,
+  BROKER_RECONNECT_WAIT_MS,
+  detectRecovery,
+  judgeBrokerReplay,
+  type RecoveryKind,
+  type RetryBudgets,
+} from "../../agent/retryPolicy.js";
 import { getBrokerReady } from "../../agent/brokerReadiness.js";
 import {
   recordPushReply,
@@ -958,13 +967,19 @@ async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSi
     type: EVENT_TYPES.status,
     message: "Tools are still starting up…",
   });
-  await abortableSleep(BROKER_RECONNECT_WAIT_MS, abortSignal);
-  // A stop cuts the wait short, so "no beacon yet" says nothing about the
-  // broker here. Judging anyway would log a diagnosis for a turn the user
-  // cancelled — and the caller ends it either way.
+  // Two clocks, deliberately. The reconnect pause is the one a REPLAY costs and
+  // it is unchanged. The decision window is longer and only the give-up path
+  // pays it: concluding "no beacon, so the broker never came up" is unsound
+  // until the beacon has run out of delivery attempts, and refusing a replay on
+  // a beacon still in flight would break the recovery this wait exists for.
+  const paused = abortableSleep(BROKER_RECONNECT_WAIT_MS, abortSignal);
+  const ready = await awaitBrokerReady(() => getBrokerReady(chatSessionId), BROKER_READY_DECISION_WINDOW_MS, abortSignal);
+  await paused;
+  // A stop cuts both short, so "no beacon yet" says nothing about the broker
+  // here. Judging anyway would log a diagnosis for a turn the user cancelled —
+  // and the caller ends it either way.
   if (abortSignal.aborted) return "aborted";
 
-  const ready = getBrokerReady(chatSessionId);
   const verdict = judgeBrokerReplay(readyBeforeWait !== null, ready !== null);
   const detail = { chatSessionId, brokerEverReady: ready !== null, reason: verdict.reason, ...(ready ?? {}) };
   if (verdict.replay) {

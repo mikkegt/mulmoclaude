@@ -14,6 +14,20 @@ import { EVENT_TYPES } from "../../src/types/events.js";
  *  forensics show it comes up a few seconds after losing the race. */
 export const BROKER_RECONNECT_WAIT_MS = 3 * ONE_SECOND_MS;
 
+/** How long the host keeps looking for the startup beacon before concluding it
+ *  is not coming.
+ *
+ *  MUST exceed the beacon's own delivery budget (`beaconDeliveryBudgetMs`).
+ *  Until delivery has run out of attempts, an absent beacon is equally
+ *  consistent with one still in flight — and refusing the replay on that
+ *  reading would break the #2057 recovery for a broker that DID answer
+ *  `initialize`, which is the opposite of what this feature is for (Codex
+ *  review on #2931). A test pins the inequality.
+ *
+ *  Only the give-up path waits this long. A beacon that arrives decides
+ *  immediately, so the replay path still costs `BROKER_RECONNECT_WAIT_MS`. */
+export const BROKER_READY_DECISION_WINDOW_MS = 8 * ONE_SECOND_MS;
+
 /** Why the broker replay was taken or refused. Goes straight into the log line,
  *  so the three failures that produce one identical CLI error are separable
  *  from the outside — the ambiguity #2842 was filed against. */
@@ -98,3 +112,25 @@ export const abortableSleep = (delayMs: number, signal: AbortSignal): Promise<vo
       { once: true },
     );
   });
+
+/** How often readiness is re-read while waiting. The beacon lands in an HTTP
+ *  handler on another task, so there is nothing to await — but the wait is
+ *  bounded and rare (only a failed turn reaches it), so polling costs nothing
+ *  a subscription would save. */
+const BROKER_READY_POLL_MS = 250;
+
+/** Wait until `readReady` answers, the window closes, or the turn is aborted.
+ *
+ *  `readReady` is injected rather than imported so the policy stays testable
+ *  without the readiness module's process-wide state. */
+export async function awaitBrokerReady<T>(readReady: () => T | null, windowMs: number, signal: AbortSignal): Promise<T | null> {
+  const deadline = Date.now() + windowMs;
+  const poll = async (): Promise<T | null> => {
+    const ready = readReady();
+    if (ready !== null) return ready;
+    if (signal.aborted || Date.now() >= deadline) return null;
+    await abortableSleep(BROKER_READY_POLL_MS, signal);
+    return poll();
+  };
+  return poll();
+}

@@ -871,9 +871,10 @@ so read these three before forming a theory:
   not the boot. See the scheduled-run section above.
 - `brokerEverReady=false` with no `broker ready` line anywhere → the broker never started. That
   is the permanent load failure; check the `Cannot find module` section. The host stops after one
-  attempt here, so the cost is ONE connect wait plus the 3 s reconnect delay instead of two
-  connect waits — the first wait still happens, because nothing can tell the broker is not coming
-  until the CLI gives up on it.
+  attempt here, so the cost is ONE connect wait plus a few seconds instead of two connect waits —
+  the first wait still happens, because nothing can tell the broker is not coming until the CLI
+  gives up on it, and the host then keeps looking for the beacon a little longer before concluding
+  it will never arrive.
 - Old or unrecorded `claudeCodeVersion` alongside any of these → rule out the frozen CLI first.
 
 ---

@@ -21,6 +21,35 @@ export interface BeaconDelivery {
 export interface BeaconRetryPolicy {
   attempts: number;
   retryDelayMs: number;
+  /** How long one attempt may take before it counts as failed. */
+  timeoutMs: number;
+}
+
+/** How the broker delivers its startup beacon.
+ *
+ *  Short per-attempt timeout, tried repeatedly, rather than one patient
+ *  attempt: the retry is what survives a momentarily busy host, and a long
+ *  timeout only delays the retry that would have worked. Timeliness matters
+ *  because the host is waiting on this to decide whether the turn is worth
+ *  replaying.
+ *
+ *  Exported as one object because the host's decision window is defined
+ *  against its TOTAL budget — see `beaconDeliveryBudgetMs`. */
+export const BROKER_READY_DELIVERY: BeaconRetryPolicy = {
+  attempts: 3,
+  retryDelayMs: 500,
+  timeoutMs: 2000,
+};
+
+/** Longest a delivery can take before every attempt has failed: each attempt
+ *  may burn its whole timeout, with a pause between them.
+ *
+ *  The host must not conclude "no beacon, so the broker never came up" before
+ *  this has elapsed — until then, an absent beacon is equally consistent with
+ *  one still in flight, and refusing the replay on that reading breaks the
+ *  #2057 recovery (Codex review on #2931). */
+export function beaconDeliveryBudgetMs(policy: BeaconRetryPolicy): number {
+  return policy.attempts * policy.timeoutMs + (policy.attempts - 1) * policy.retryDelayMs;
 }
 
 /** Send until an attempt succeeds or the budget runs out, and report which.
