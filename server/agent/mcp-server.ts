@@ -23,7 +23,7 @@ import { safeResponseText } from "../utils/http.js";
 import { readTextSafeSync } from "../utils/files/safe.js";
 import { WORKSPACE_PATHS } from "../workspace/paths.js";
 import { makeUuid } from "../utils/id.js";
-import { deliverBeacon } from "./brokerBeacon.js";
+import { deliverBeacon, BROKER_READY_DELIVERY } from "./brokerBeacon.js";
 
 type JsonRpcId = string | number | null;
 
@@ -592,14 +592,6 @@ const BOOT_MS = Math.round(performance.now());
 // `server/build/mcp-server.mjs`, the fallback runs `mcp-server.ts` under tsx.
 const BROKER_KIND = import.meta.url.endsWith(".mjs") ? "bundle" : "tsx";
 
-// Generous because nothing waits on it: the handshake reply is already on the
-// wire when this runs, so a slow round-trip costs the turn nothing. The old 2 s
-// was tight enough that a momentarily busy host lost the beacon outright, and a
-// lost beacon now reads as a broker that never came up.
-const BROKER_READY_TIMEOUT_MS = 5 * ONE_SECOND_MS;
-const BROKER_READY_ATTEMPTS = 3;
-const BROKER_READY_RETRY_DELAY_MS = ONE_SECOND_MS;
-
 // `initialize` can arrive again on a reconnect; the first answer is the one
 // that raced the CLI's connect wait, so later ones say nothing new. Set when
 // delivery STARTS, not when it succeeds — a second handshake must not open a
@@ -622,7 +614,7 @@ function reportBrokerReady(): void {
   const body = { bootMs: BOOT_MS, initializeMs: Math.round(performance.now()), kind: BROKER_KIND, spawnId: env.mcpSpawnId };
   void deliverBeacon(
     {
-      send: () => postJson(API_ROUTES.mcp.brokerReady, body, { timeoutMs: BROKER_READY_TIMEOUT_MS }),
+      send: (timeoutMs) => postJson(API_ROUTES.mcp.brokerReady, body, { timeoutMs }),
       // Unref'd: a pending retry must never be the reason this process stays up.
       wait: (delayMs) =>
         new Promise<void>((resolve) => {
@@ -630,7 +622,7 @@ function reportBrokerReady(): void {
         }),
       report: (attempts, err) => process.stderr.write(`[mcp-server] startup beacon undelivered after ${attempts} attempts: ${errorMessage(err)}\n`),
     },
-    { attempts: BROKER_READY_ATTEMPTS, retryDelayMs: BROKER_READY_RETRY_DELAY_MS },
+    BROKER_READY_DELIVERY,
   );
 }
 

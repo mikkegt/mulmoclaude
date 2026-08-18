@@ -859,7 +859,7 @@ so read these three before forming a theory:
 |---|---|
 | `spawning agent … broker=tsx` | This install is on the SLOW path: the bundle is missing, so the broker is transcoded from source on every spawn (seconds to tens of seconds over a Windows/macOS bind mount). A `broker bundle missing` warn accompanies it once per process. |
 | `[mcp] broker ready bootMs=… initializeMs=…` | The broker DID connect, and how long it took. `broker cold boot is slow` replaces it past 5 s. |
-| `brokerEverReady=false reason=never-ready` on the retry warn | No beacon arrived for that chat, on either side of the 3 s wait — the broker did not come up at all. The turn is NOT replayed: a replay would sit out another full connect wait and end in the same error. |
+| `brokerEverReady=false reason=never-ready` on the retry warn | No beacon arrived for that chat, and the host kept looking until the beacon's own delivery budget was spent — the broker did not come up at all. The turn is NOT replayed: a replay would sit out another full connect wait and end in the same error. |
 | `reason=ready-during-wait` on the retry warn | The beacon arrived while the host waited, so the broker lost the race by a moment and IS connected now. The turn is replayed, which is what fixes this one. |
 | `brokerEverStarted=` on the `MCP tools were unavailable` warn | Whether the broker PROCESS ever existed, which is a different question from whether it answered. `true` with `brokerEverReady=false` means it launched and never finished booting — the boot is the problem (the mount, the `tsx` path). `false` means it never launched — the spawn is the problem. |
 
@@ -880,6 +880,10 @@ so read these three before forming a theory:
   — rather than waiting longer), while a boot that CRASHED fails as fast as a missing binary. The
   crash reason is not in this log by construction: Claude CLI owns the broker's stderr, so read
   the `Cannot find module` section for what to check.
+- Either way the turn is NOT replayed, so the cost is ONE connect wait rather than two. The first
+  wait still happens — nothing can tell the broker is not coming until the CLI gives up on it —
+  and the host then keeps looking for the beacon a few seconds longer before concluding it never
+  will, so that a beacon merely still in flight is not mistaken for a broker that never answered.
 - Do NOT read a missing `broker ready` line on its own as "the broker never started" — before
   `brokerEverStarted` existed, that inference was the only one available and it is wrong for
   exactly the case that costs the most time.
