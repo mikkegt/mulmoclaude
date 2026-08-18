@@ -100,11 +100,13 @@ router.post(API_ROUTES.mcp.brokerReady, (req: Request<object, unknown, BrokerRea
 // POST /api/mcp/broker-starting — the broker's `--import` preload reporting
 // that the process exists, before it has loaded anything of its own.
 //
-// Why a second beacon: the ready beacon arrives after the cold boot, so while
-// the host is still waiting for it, "slow" and "dead" are the same observation.
-// This one does not wait for anything to load, so its absence past a short
-// deadline means the process is not running — which is what lets the host stop
-// a doomed turn instead of sitting out the CLI's full connect timeout.
+// Why a second beacon: the ready beacon arrives after the cold boot, so a turn
+// that never sees one cannot say whether the broker was slow or absent. This
+// one does not wait for anything to load, so it separates the two AFTER the
+// fact — the `MCP tools were unavailable` warn names the boot or the spawn
+// instead of guessing. It ends nothing early: fail-fast was measured and not
+// built (#2842), because the only case a deadline would have caught is the one
+// the CLI already fails fast on.
 router.post(API_ROUTES.mcp.brokerStarting, (req: Request<object, unknown, { spawnId?: unknown }>, res: Response) => {
   const sessionId = req.query.session;
   if (typeof sessionId !== "string" || sessionId.length === 0) {
@@ -117,10 +119,10 @@ router.post(API_ROUTES.mcp.brokerStarting, (req: Request<object, unknown, { spaw
     return;
   }
   // Debug, not info: this fires on every single spawn and carries no
-  // measurement. It is still worth recording, because the host now ENDS a turn
-  // when it does not arrive — so "the beacon was reaching us all along" has to
-  // be answerable from the log rather than by reasoning about the network.
-  // A straggler from a superseded spawn is not this turn's evidence.
+  // measurement. It is still worth recording, because the warn that reads it
+  // blames the spawn when it is missing — so "the beacon was reaching us all
+  // along" has to be answerable from the log rather than by reasoning about the
+  // network. A straggler from a superseded spawn is not this turn's evidence.
   const counted = recordBrokerStarting(sessionId, spawnId);
   log.debug("mcp", "broker starting", { chatSessionId: sessionId, counted });
   res.status(204).end();

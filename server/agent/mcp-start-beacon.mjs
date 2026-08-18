@@ -6,11 +6,11 @@
 // something the host can see, separately from "the process finished booting",
 // which the ready beacon reports afterwards. A broker that is merely slow has
 // answered this within milliseconds; one that never launched never will, and
-// that difference is what lets the host stop waiting on a doomed turn instead
-// of sitting out the CLI's full connect timeout.
+// that difference is what lets the failure warn name the boot or the spawn
+// instead of folding both into one symptom. Diagnostic only — nothing here
+// ends a turn (#2842).
 //
-// TWO signals, because the decision they feed KILLS a running turn and they
-// fail for unrelated reasons:
+// TWO signals, because they fail for unrelated reasons:
 //
 //   1. A marker file, written synchronously. Measured at 59 ms into a process
 //      whose boot went on for another 890 ms.
