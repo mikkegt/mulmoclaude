@@ -203,8 +203,13 @@ const HOST_API_ROUTES = {
   mcp: {
     brokerReady: "/api/mcp/broker-ready",
     /** Fired from an `--import` preload before the broker loads anything, so
-     *  it says "the process exists" without waiting for the cold boot. The
-     *  host stops a turn whose broker never sends it. */
+     *  it says "the process exists" without waiting for the cold boot.
+     *
+     *  Diagnostic only — nothing acts on it while a turn runs. It is read
+     *  AFTER the CLI exits, to say whether a turn that lost its tools had a
+     *  broker that never launched (the spawn) or one that launched and never
+     *  finished booting (the boot). The fail-fast this was originally built
+     *  for was measured and deliberately not shipped; see #2842. */
     brokerStarting: "/api/mcp/broker-starting",
   },
 
