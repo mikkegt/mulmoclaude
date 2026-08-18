@@ -138,6 +138,25 @@ a healthy broker look like one that never started.
 The error the turn died on is surfaced either way. It was being swallowed for a
 replay; when the replay is refused, it is emitted instead of the turn ending
 silently.
+#### `yarn dev` served the SPA instead of an HTML page outside `artifacts/html/` (#2928)
+
+`presentHtml`'s `path` form opens ANY page on disk, and the pane's iframe reaches
+one outside the artifacts tree through the backend's `/htmlfile/<scope>/…` mount.
+Vite's dev proxy never listed that prefix, so the SPA catch-all answered it —
+with `index.html`, HTTP 200. The sandboxed iframe then tried to load the injected
+`@vite/client` from its opaque origin, the browser refused it as cross-origin,
+and the pane rendered blank. Dev only; production has no Vite in front.
+
+The entry carries `xfwd: true` for the same reason `/artifacts/html` does — the
+CSP names the browser-visible origin, which `changeOrigin` would otherwise hide —
+and it bites harder here, because this mount also serves the page's images and
+media.
+
+`/htmlfile` joins the dev server's loopback-only guard in the same change, so
+`MULMOCLAUDE_DEV_LAN=1` refuses it from the network like every other proxied
+backend prefix. `test/config/test_viteDevProxy.ts` now checks the URLs the View
+actually builds against the proxy table, and the proxy table against that guard,
+so neither list can silently fall behind the other again.
 
 #### `@mulmoclaude/core@4.2.0` / `@mulmoclaude/collection-plugin@4.2.0` — a server-stamped datetime reaches a page as a string
 
