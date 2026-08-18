@@ -25,9 +25,18 @@ export interface BeaconRetryPolicy {
 
 /** Send until an attempt succeeds or the budget runs out, and report which.
  *
- *  Never rejects: the only caller is the `initialize` handler, which must not
- *  be delayed or broken by the beacon it fires — a beacon that made the
- *  handshake slower would worsen the very race it exists to measure. */
+ *  Never rejects: the only caller is the `initialize` handler, which fires this
+ *  and moves on — a rejection there becomes an unhandled rejection in the
+ *  broker rather than a logged beacon failure, which is a worse outcome than
+ *  any beacon is worth.
+ *
+ *  "Never" is enforced at the boundary rather than argued call by call. Only
+ *  `send` is caught inside the loop, because only its failure means "retry";
+ *  `wait` and `report` throwing mean the beacon is not going to be delivered,
+ *  which is what `false` already says. Containing it in one place also means a
+ *  later edit inside the loop cannot quietly reintroduce the escape — the
+ *  reporter is the real risk, since it writes to a stderr pipe Claude CLI owns
+ *  and a CLI that has already exited turns that write into an EPIPE throw. */
 export async function deliverBeacon(delivery: BeaconDelivery, policy: BeaconRetryPolicy): Promise<boolean> {
   if (policy.attempts < 1) return false;
 
@@ -45,5 +54,5 @@ export async function deliverBeacon(delivery: BeaconDelivery, policy: BeaconRetr
     }
   };
 
-  return attempt(policy.attempts);
+  return attempt(policy.attempts).catch(() => false);
 }
