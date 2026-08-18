@@ -141,6 +141,9 @@ const requestFromLoopback = new AsyncLocalStorage<boolean>()
 // connect middleware never sees a WebSocket handshake (those arrive on the
 // http server's `upgrade` event, not the request pipeline), so the prefix
 // alone would not stop it.
+//
+// Exported for that test alone — this module is the dev server's config and
+// loads node builtins, so client code under `src/` can never import it.
 export const PROXIED_BACKEND_PREFIXES = ['/api', '/artifacts', '/htmlfile', '/ws'] as const
 
 function startsWithProxiedPrefix(url: string | undefined): boolean {

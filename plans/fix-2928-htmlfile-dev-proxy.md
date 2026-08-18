@@ -10,7 +10,7 @@ iframe が空白になる。sandboxed iframe（opaque origin）が Vite の注�
 
 backend を起動せず Vite だけを上げて経路差を確認（`npx vite --port 45999 --strictPort`）:
 
-```
+```text
 /artifacts/html/x.html   -> 502   （proxy されている = backend 不在なので 502）
 /api/config              -> 502
 /htmlfile/abs/tmp/x.html -> 200   <!DOCTYPE html> …  ← SPA catch-all の index.html
