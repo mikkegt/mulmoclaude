@@ -614,7 +614,7 @@ function reportBrokerReady(): void {
   const body = { bootMs: BOOT_MS, initializeMs: Math.round(performance.now()), kind: BROKER_KIND, spawnId: env.mcpSpawnId };
   void deliverBeacon(
     {
-      send: () => postJson(API_ROUTES.mcp.brokerReady, body, { timeoutMs: BROKER_READY_DELIVERY.timeoutMs }),
+      send: (timeoutMs) => postJson(API_ROUTES.mcp.brokerReady, body, { timeoutMs }),
       // Unref'd: a pending retry must never be the reason this process stays up.
       wait: (delayMs) =>
         new Promise<void>((resolve) => {

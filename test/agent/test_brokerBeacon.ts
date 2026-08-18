@@ -16,6 +16,8 @@ const POLICY = { attempts: 3, retryDelayMs: 1000, timeoutMs: 2000 };
 interface Recorder {
   delivery: BeaconDelivery;
   sends: number;
+  /** Timeout each attempt was handed — the budget is only real if it arrives. */
+  sendTimeouts: number[];
   waits: number[];
   reports: { attempts: number; error: unknown }[];
 }
@@ -24,12 +26,14 @@ interface Recorder {
 function recorder(outcomes: boolean[]): Recorder {
   const rec: Recorder = {
     sends: 0,
+    sendTimeouts: [],
     waits: [],
     reports: [],
     delivery: {
-      send: async () => {
+      send: async (timeoutMs: number) => {
         const ok = outcomes[rec.sends] ?? false;
         rec.sends += 1;
+        rec.sendTimeouts.push(timeoutMs);
         if (!ok) throw new Error(`attempt ${rec.sends} failed`);
       },
       wait: async (delayMs: number) => {
@@ -158,6 +162,14 @@ describe("beaconDeliveryBudgetMs", () => {
     assert.equal(beaconDeliveryBudgetMs({ attempts: 1, retryDelayMs: 500, timeoutMs: 2000 }), 2000);
   });
 
+  // A budget is a duration. The bare arithmetic goes NEGATIVE below one
+  // attempt, and a negative budget is one any window satisfies — including a
+  // window of zero, which is the comparison this whole function exists for.
+  it("spends nothing when nothing is sent", () => {
+    assert.equal(beaconDeliveryBudgetMs({ attempts: 0, retryDelayMs: 500, timeoutMs: 2000 }), 0);
+    assert.equal(beaconDeliveryBudgetMs({ attempts: -3, retryDelayMs: 500, timeoutMs: 2000 }), 0);
+  });
+
   it("leaves the host's decision window strictly longer than the shipped budget", () => {
     assert.ok(
       BROKER_READY_DECISION_WINDOW_MS > beaconDeliveryBudgetMs(BROKER_READY_DELIVERY),
@@ -169,5 +181,16 @@ describe("beaconDeliveryBudgetMs", () => {
   // then — past the connect ceiling there is no turn left to replay.
   it("keeps the decision window well inside the CLI's connect ceiling", () => {
     assert.ok(BROKER_READY_DECISION_WINDOW_MS < ONE_MINUTE_MS);
+  });
+});
+
+// The budget is `attempts × timeout + pauses`, so an attempt that never receives
+// its timeout can outlast the whole calculation — and the host's decision window
+// is derived from that calculation (CodeRabbit review on #2931).
+describe("deliverBeacon timeout handling", () => {
+  it("hands every attempt the policy's timeout", async () => {
+    const rec = recorder([false, false, true]);
+    await deliverBeacon(rec.delivery, { attempts: 3, retryDelayMs: 5, timeoutMs: 1234 });
+    assert.deepEqual(rec.sendTimeouts, [1234, 1234, 1234]);
   });
 });

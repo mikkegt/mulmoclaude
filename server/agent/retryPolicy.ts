@@ -102,14 +102,27 @@ export const abortableSleep = (delayMs: number, signal: AbortSignal): Promise<vo
       resolve();
       return;
     }
-    const timer = setTimeout(resolve, delayMs);
+    // Detached on BOTH exits. `{ once: true }` only releases the listener if the
+    // abort actually fires, so a sleep that simply finished used to leave one
+    // behind — measured at one per call on the same signal, which the readiness
+    // poll turns into 32 over its window (CodeRabbit review on #2931).
+    // Registered against its OWN signal so it detaches on EITHER exit. `{ once:
+    // true }` alone releases the listener only when the abort actually fires, so
+    // a sleep that simply finished used to leave one behind — one per call on
+    // the same signal, which the readiness poll turns into ~32 over its window
+    // (CodeRabbit review on #2931).
+    const registration = new AbortController();
+    const timer = setTimeout(() => {
+      registration.abort();
+      resolve();
+    }, delayMs);
     signal.addEventListener(
       "abort",
       () => {
         clearTimeout(timer);
         resolve();
       },
-      { once: true },
+      { once: true, signal: registration.signal },
     );
   });
 

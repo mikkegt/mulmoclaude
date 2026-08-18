@@ -10,8 +10,12 @@
 // broker failure.
 
 export interface BeaconDelivery {
-  /** One delivery attempt. Must reject on network error AND on HTTP failure. */
-  send: () => Promise<unknown>;
+  /** One delivery attempt, bounded by the `timeoutMs` it is handed. Must reject
+   *  on a timeout, on a network error, AND on an HTTP failure — the budget
+   *  below is only meaningful if an attempt cannot outlast its timeout. Passed
+   *  in rather than read from the policy by the sender, so a sender cannot
+   *  quietly stop honouring it. */
+  send: (timeoutMs: number) => Promise<unknown>;
   /** Pause between attempts. Injected so a test spends no real time. */
   wait: (delayMs: number) => Promise<void>;
   /** Called once, with the final error, when every attempt failed. */
@@ -49,6 +53,10 @@ export const BROKER_READY_DELIVERY: BeaconRetryPolicy = {
  *  one still in flight, and refusing the replay on that reading breaks the
  *  #2057 recovery (Codex review on #2931). */
 export function beaconDeliveryBudgetMs(policy: BeaconRetryPolicy): number {
+  // Nothing is sent below one attempt, so nothing is spent. Without this the
+  // arithmetic returns a NEGATIVE duration, which any window would then satisfy
+  // — the one comparison this function exists for (CodeRabbit review on #2931).
+  if (policy.attempts < 1) return 0;
   return policy.attempts * policy.timeoutMs + (policy.attempts - 1) * policy.retryDelayMs;
 }
 
@@ -71,7 +79,7 @@ export async function deliverBeacon(delivery: BeaconDelivery, policy: BeaconRetr
 
   const attempt = async (remaining: number): Promise<boolean> => {
     try {
-      await delivery.send();
+      await delivery.send(policy.timeoutMs);
       return true;
     } catch (err) {
       if (remaining <= 1) {

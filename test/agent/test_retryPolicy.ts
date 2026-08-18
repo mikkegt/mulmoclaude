@@ -5,6 +5,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import {
   detectRecovery,
   isRecoverableBrokerNotReady,
@@ -157,6 +158,24 @@ describe("abortableSleep", () => {
     const waited = abortableSleep(60_000, controller.signal);
     controller.abort();
     assert.equal(await raceAgainstDeadline(waited), "slept");
+  });
+
+  // `{ once: true }` releases a listener only if the abort actually fires, so a
+  // sleep that simply finished used to leave one behind. Harmless per call, but
+  // the readiness poll calls this ~32 times on ONE signal over its window
+  // (CodeRabbit review on #2931).
+  it("leaves no abort listener behind when the timer wins", async () => {
+    const controller = new AbortController();
+    await Array.from({ length: 20 }).reduce<Promise<void>>((chain) => chain.then(() => abortableSleep(1, controller.signal)), Promise.resolve());
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  });
+
+  it("leaves no abort listener behind when the abort wins", async () => {
+    const controller = new AbortController();
+    const waited = abortableSleep(60_000, controller.signal);
+    controller.abort();
+    await waited;
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
   });
 });
 
