@@ -18,7 +18,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeStartMarker } from "../../server/agent/mcp-start-beacon.mjs";
-import { markerHolds } from "../../server/agent/backend/claude-code.js";
+import { markerHolds, MARKER_MAX_BYTES } from "../../server/agent/backend/claude-code.js";
 
 // Windows has no `O_NOFOLLOW`, and `symlinkSync` there needs a privilege the
 // runner does not have — so the symlink cases are POSIX-only rather than
@@ -196,5 +196,28 @@ describe("markerHolds", () => {
     const padded = path.join(root, "padded-past-cap");
     writeFileSync(padded, `spawn-abc${"x".repeat(10 * 1024 * 1024)}`);
     assert.equal(markerHolds(padded, "spawn-abc"), false);
+  });
+
+  // The variant the two cases above miss, and the reason size is now checked
+  // rather than only the read being bounded: pad with WHITESPACE inside the cap
+  // and `trim()` strips it, so everything past the cap goes unseen and a huge
+  // file reads as a valid marker. The cases above pad with `x`, which trim
+  // keeps — so they passed either way and gave false assurance (CodeRabbit
+  // review on #2932).
+  it("refuses an oversized marker whose first bytes are the id plus whitespace", () => {
+    const sneaky = path.join(root, "whitespace-padded");
+    // The whitespace must fill the cap EXACTLY, so the window the read sees
+    // trims down to the id and nothing of the payload lands inside it. Padding
+    // that stops short leaves junk in the window and is rejected anyway —
+    // which is how the first version of this test passed without the fix.
+    writeFileSync(sneaky, `spawn-abc`.padEnd(MARKER_MAX_BYTES, " ") + "x".repeat(1024 * 1024));
+    assert.equal(markerHolds(sneaky, "spawn-abc"), false);
+  });
+
+  // The boundary itself: a marker exactly at the cap is still a marker.
+  it("accepts a marker sized exactly at the cap", () => {
+    const exact = path.join(root, "exactly-at-cap");
+    writeFileSync(exact, "spawn-abc".padEnd(MARKER_MAX_BYTES, " "));
+    assert.equal(markerHolds(exact, "spawn-abc"), true);
   });
 });

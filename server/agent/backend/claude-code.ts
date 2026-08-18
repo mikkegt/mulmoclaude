@@ -205,7 +205,7 @@ function brokerEverStarted(turn: TurnMcpContext): boolean {
  *  slicing afterwards, or a planted multi-gigabyte file would be pulled into
  *  memory in full before the cap applied (Codex review on #2932), which is the
  *  trap `docs/large-file-reading.md` exists for. */
-const MARKER_MAX_BYTES = 128;
+export const MARKER_MAX_BYTES = 128;
 
 /** Does the marker say THIS broker wrote it?
  *
@@ -246,7 +246,13 @@ export function markerHolds(markerPath: string, spawnId: string): boolean {
     return false;
   }
   try {
-    if (!fstatSync(handle).isFile()) return false;
+    // Size as well as type. Reading only the first `MARKER_MAX_BYTES` bounds
+    // the read, but it does not REJECT a larger file: an id followed by
+    // whitespace inside the cap, then arbitrary content past it, survives the
+    // `trim()` below. Our own marker is one uuid, so anything larger is not one
+    // (CodeRabbit review on #2932).
+    const stat = fstatSync(handle);
+    if (!stat.isFile() || stat.size > MARKER_MAX_BYTES) return false;
     const buffer = Buffer.alloc(MARKER_MAX_BYTES);
     const bytes = readSync(handle, buffer, 0, MARKER_MAX_BYTES, 0);
     return buffer.subarray(0, bytes).toString("utf-8").trim() === spawnId;
