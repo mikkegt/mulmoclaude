@@ -93,12 +93,21 @@ condition for giving up early has to be the absence of a liveness signal, not
 elapsed time.
 
 Refusing the replay made the beacon load-bearing, so it also had to stop being
-droppable: it was one fire-and-forget POST on a 2 s timeout, and any transient
-failure lost it for good. It now retries up to three times, one second apart, on
-a 5 s timeout, and writes a line to the broker's stderr if every attempt fails.
-Nothing waits on it — the handshake reply is already on the wire — so a slower
-round trip costs the turn nothing, while a beacon lost in flight would have made
-a healthy broker look like one that never started.
+droppable: it was one fire-and-forget POST, and any transient failure lost it for
+good. It now makes up to three attempts, each bounded at 2 s and half a second
+apart, and writes a line to the broker's stderr if every one of them fails. A
+short timeout tried repeatedly beats one patient attempt here — the retry is what
+absorbs a busy host, while a long timeout only delays the retry that would have
+worked.
+
+That budget is not decoration: the host reads readiness for a window derived from
+it (8 s against the 7 s the attempts can take) rather than deciding at the end of
+a fixed pause, because "no beacon" may only be read as "no broker" once delivery
+has actually run out of attempts. Deciding sooner would refuse the replay for a
+broker whose beacon is merely still in flight, which is the recovery this feature
+is supposed to protect. The inequality between the two is a test, so they cannot
+drift apart. A beacon that lands decides immediately, so the replay path still
+costs the same 3 s — only the give-up path pays the longer window.
 
 The error the turn died on is surfaced either way. It was being swallowed for a
 replay; when the replay is refused, it is emitted instead of the turn ending
