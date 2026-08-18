@@ -10,7 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -191,7 +191,19 @@ interface TurnMcpContext {
 // Read after the CLI exits, so this costs nothing on a healthy turn.
 function brokerEverStarted(turn: TurnMcpContext): boolean {
   if (getBrokerStarted(turn.chatSessionId)) return true;
-  return turn.startMarkerPath !== undefined && existsSync(turn.startMarkerPath);
+  return turn.startMarkerPath !== undefined && isRegularFile(turn.startMarkerPath);
+}
+
+/** `lstat` rather than `existsSync`, and a regular file rather than any entry:
+ *  the marker sits in a directory the sandboxed agent can write, so a symlink
+ *  planted at that path would otherwise report a broker that never ran as
+ *  having started — the one thing this signal is asked to be right about. */
+function isRegularFile(filePath: string): boolean {
+  try {
+    return lstatSync(filePath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 // `aborted` is the abort SIGNAL, not `isAbortCausedExit`: the question here is

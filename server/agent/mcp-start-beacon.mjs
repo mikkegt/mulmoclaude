@@ -29,7 +29,7 @@
 // signal exists to precede. That is also why the retry below is written out
 // rather than shared with `brokerBeacon.ts`.
 
-import { writeFileSync } from "node:fs";
+import { closeSync, constants, openSync, writeSync } from "node:fs";
 
 const HOST = process.env.MCP_HOST || "localhost";
 const PORT = process.env.PORT || "";
@@ -44,12 +44,38 @@ const ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
 const TIMEOUT_MS = 2000;
 
+/** Create the marker, refusing to write through anything that is already there.
+ *
+ *  Under Docker this path is inside the workspace bind mount, which the
+ *  sandboxed agent can write — so a plain write would follow a symlink planted
+ *  at that path and truncate whatever it points at. No privilege is crossed
+ *  (the broker runs as the same uid in the same container, so the agent could
+ *  write the target itself), but a write that follows an attacker-placed link
+ *  is wrong regardless, and the marker never wants to overwrite anything:
+ *
+ *  - `O_EXCL` — the name carries a fresh per-spawn UUID, so an existing file is
+ *    already not ours. Refusing is also what makes a planted one harmless.
+ *  - `O_NOFOLLOW` — never traverse a symlink at the final component. POSIX
+ *    only; on Windows the constant is absent and falls out of the mask, where
+ *    `O_EXCL` alone still refuses a planted entry.
+ *
+ *  Exported for the unit test; the call below is what runs in the broker. */
+export function writeStartMarker(markerPath, spawnId) {
+  const flags = constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0);
+  const handle = openSync(markerPath, flags, 0o600);
+  try {
+    writeSync(handle, spawnId);
+  } finally {
+    closeSync(handle);
+  }
+}
+
 // Synchronous and first, so it lands even while the boot that follows holds the
 // event loop. Failure is not worth reporting: the HTTP beacon is the fallback,
 // and a broker that cannot write here still works.
 if (MARKER_PATH) {
   try {
-    writeFileSync(MARKER_PATH, SPAWN_ID);
+    writeStartMarker(MARKER_PATH, SPAWN_ID);
   } catch {
     // ignored — see above
   }
