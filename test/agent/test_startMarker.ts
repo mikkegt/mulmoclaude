@@ -13,10 +13,15 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import path from "node:path";
 import { writeStartMarker } from "../../server/agent/mcp-start-beacon.mjs";
 import { markerHolds } from "../../server/agent/backend/claude-code.js";
+
+// Windows has no `O_NOFOLLOW`, and `symlinkSync` there needs a privilege the
+// runner does not have — so the symlink cases are POSIX-only rather than
+// failing for a reason that is not about this code.
+const SYMLINK_SKIP = platform() === "win32" ? "symlinks need privilege on Windows, and O_NOFOLLOW does not exist there" : false;
 
 let root = "";
 
@@ -44,7 +49,7 @@ describe("writeStartMarker", () => {
 
   // The case the hardening exists for: the write must not travel down a link
   // the sandboxed agent planted.
-  it("refuses a symlink and leaves its target untouched", () => {
+  it("refuses a symlink and leaves its target untouched", { skip: SYMLINK_SKIP }, () => {
     const victim = path.join(root, "victim");
     writeFileSync(victim, "precious");
     const marker = path.join(root, "planted-link");
@@ -53,7 +58,7 @@ describe("writeStartMarker", () => {
     assert.equal(readFileSync(victim, "utf-8"), "precious");
   });
 
-  it("refuses a symlink even when its target does not exist yet", () => {
+  it("refuses a symlink even when its target does not exist yet", { skip: SYMLINK_SKIP }, () => {
     const target = path.join(root, "not-there-yet");
     const marker = path.join(root, "dangling-link");
     symlinkSync(target, marker);
@@ -98,7 +103,7 @@ describe("markerHolds", () => {
     assert.equal(markerHolds(marker, "spawn-abc"), false);
   });
 
-  it("rejects a symlink even when its target holds the right id", () => {
+  it("rejects a symlink even when its target holds the right id", { skip: SYMLINK_SKIP }, () => {
     const target = path.join(root, "right-content");
     writeFileSync(target, "spawn-abc");
     const marker = path.join(root, "link-to-right-content");
@@ -116,14 +121,33 @@ describe("markerHolds", () => {
     assert.equal(markerHolds(marker, "spawn-abc"), false);
   });
 
-  // Trailing whitespace from a shell-written marker should not disqualify it,
-  // but padding it out to something huge should not be read whole either.
-  it("tolerates surrounding whitespace and refuses an oversized marker", () => {
+  it("tolerates surrounding whitespace from the write", () => {
     const padded = path.join(root, "padded");
     writeFileSync(padded, "  spawn-abc\n");
     assert.equal(markerHolds(padded, "spawn-abc"), true);
+  });
+
+  // The cap is enforced by the READ — `readSync` into a fixed
+  // `Buffer.alloc(MARKER_MAX_BYTES)` — not by slicing afterwards, which is what
+  // `docs/large-file-reading.md` warns about and what Codex flagged on #2932.
+  //
+  // Stated plainly: that bound is NOT observable through this function's return
+  // value, and these two cases do not prove it. An attempt to build a case that
+  // discriminates (a sparse file past `kStringMaxLength` whose first bytes hold
+  // the id) fails for an unrelated and correct reason — `ftruncate` zero-fills,
+  // `trim()` does not strip NUL, so such a file is rejected either way. Every
+  // oversized input SHOULD be rejected, so no input separates the two
+  // implementations by result. The bound is structural; these pin the
+  // behaviour around it.
+  it("refuses a marker whose id sits past the byte cap", () => {
     const huge = path.join(root, "huge");
-    writeFileSync(huge, `${"x".repeat(500)}spawn-abc`);
+    writeFileSync(huge, `${"x".repeat(10 * 1024 * 1024)}spawn-abc`);
     assert.equal(markerHolds(huge, "spawn-abc"), false);
+  });
+
+  it("refuses a marker padded past the cap even when it starts with the id", () => {
+    const padded = path.join(root, "padded-past-cap");
+    writeFileSync(padded, `spawn-abc${"x".repeat(10 * 1024 * 1024)}`);
+    assert.equal(markerHolds(padded, "spawn-abc"), false);
   });
 });

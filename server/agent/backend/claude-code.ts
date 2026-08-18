@@ -10,7 +10,7 @@
 // unchanged.
 
 import { spawn, type ChildProcessByStdio } from "child_process";
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants, openSync, readSync } from "node:fs";
 import type { Readable, Writable } from "stream";
 import { buildCliArgs, buildDockerSpawnArgs, buildUserMessageLine, resolveSystemPromptPaths, type CliArgsParams } from "../config.js";
 import { writeFileAtomic } from "../../utils/files/atomic.js";
@@ -198,7 +198,10 @@ function brokerEverStarted(turn: TurnMcpContext): boolean {
 }
 
 /** Longest a marker may be and still be read. It holds one uuid; anything
- *  larger is not one, and the cap keeps a planted file from being read whole. */
+ *  larger is not one. Enforced by the READ — a fixed buffer — rather than by
+ *  slicing afterwards, or a planted multi-gigabyte file would be pulled into
+ *  memory in full before the cap applied (Codex review on #2932), which is the
+ *  trap `docs/large-file-reading.md` exists for. */
 const MARKER_MAX_BYTES = 128;
 
 /** Does the marker say THIS broker wrote it?
@@ -217,11 +220,25 @@ const MARKER_MAX_BYTES = 128;
  *  measured and dropped), so the bar is "not wrong by accident", not "cannot be
  *  lied to by the sandbox about its own turn". */
 export function markerHolds(markerPath: string, spawnId: string): boolean {
+  // `O_NOFOLLOW` on the OPEN rather than an `lstat` first: the two-step version
+  // can be raced, and this path is writable by the sandbox. POSIX only — on
+  // Windows the constant is absent and falls out of the mask.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+  let handle: number;
   try {
-    if (!lstatSync(markerPath).isFile()) return false;
-    return readFileSync(markerPath, "utf-8").slice(0, MARKER_MAX_BYTES).trim() === spawnId;
+    handle = openSync(markerPath, flags);
   } catch {
     return false;
+  }
+  try {
+    const buffer = Buffer.alloc(MARKER_MAX_BYTES);
+    const bytes = readSync(handle, buffer, 0, MARKER_MAX_BYTES, 0);
+    return buffer.subarray(0, bytes).toString("utf-8").trim() === spawnId;
+  } catch {
+    // A directory opens fine and fails on read; so does anything unreadable.
+    return false;
+  } finally {
+    closeSync(handle);
   }
 }
 
