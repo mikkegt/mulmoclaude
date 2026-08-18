@@ -66,6 +66,43 @@ the one legal `Z`-suffixed datetime is the one a shared app's server stamps.
 
 ### Fixed
 
+#### A broker that never starts is not replayed into a second full connect wait (#2842)
+
+When a turn dies on `MCP tool mcp__mulmoclaude__handlePermission … not found`,
+the host waited 3 s and replayed it once. That wait was built for #2057, where
+the broker comes up moments after losing the race and the replay genuinely
+recovers the turn. It does nothing for the case #2842 reported: a broker that
+never connects at all. There the replay sits out a second full connect wait and
+ends in the identical error — the reporter measured 100.8 s to return one.
+
+The startup beacon (#2898) is now read on BOTH sides of that wait, and only the
+second reading can tell the two apart. The beacon is sent when the broker
+answers `initialize`, so a broker that lost the race by a moment has not sent
+one yet at the instant the turn fails — deciding on the first reading alone
+would refuse exactly the replay that works. Reading it again after the wait
+separates them: a beacon that arrived during the wait means the broker is
+connected now and the turn is replayed as before; nothing on either side means
+it is not coming, and the turn fails immediately instead. The retry warn carries
+the verdict (`reason=never-ready` / `ready-during-wait`), so which of the two
+happened is answerable from the log.
+
+The connect-wait ceiling itself is untouched at 60 s. It exists for brokers that
+are slow but do arrive, and lowering it would bring #2201's flake back — the
+condition for giving up early has to be the absence of a liveness signal, not
+elapsed time.
+
+Refusing the replay made the beacon load-bearing, so it also had to stop being
+droppable: it was one fire-and-forget POST on a 2 s timeout, and any transient
+failure lost it for good. It now retries up to three times, one second apart, on
+a 5 s timeout, and writes a line to the broker's stderr if every attempt fails.
+Nothing waits on it — the handshake reply is already on the wire — so a slower
+round trip costs the turn nothing, while a beacon lost in flight would have made
+a healthy broker look like one that never started.
+
+The error the turn died on is surfaced either way. It was being swallowed for a
+replay; when the replay is refused, it is emitted instead of the turn ending
+silently.
+
 #### `@mulmoclaude/core@4.2.0` / `@mulmoclaude/collection-plugin@4.2.0` — a server-stamped datetime reaches a page as a string
 
 A shared collection can pin a `datetime` to the server's clock:

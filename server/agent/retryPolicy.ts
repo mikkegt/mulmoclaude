@@ -14,6 +14,37 @@ import { EVENT_TYPES } from "../../src/types/events.js";
  *  forensics show it comes up a few seconds after losing the race. */
 export const BROKER_RECONNECT_WAIT_MS = 3 * ONE_SECOND_MS;
 
+/** Why the broker replay was taken or refused. Goes straight into the log line,
+ *  so the three failures that produce one identical CLI error are separable
+ *  from the outside — the ambiguity #2842 was filed against. */
+export type BrokerReplayReason = "ready-before-wait" | "ready-during-wait" | "never-ready";
+
+export interface BrokerReplayVerdict {
+  replay: boolean;
+  reason: BrokerReplayReason;
+}
+
+/** Decide whether replaying the turn can plausibly succeed, from the startup
+ *  beacon (#2898) read on BOTH sides of the reconnect wait.
+ *
+ *  Reading it only BEFORE the wait would break the recovery the wait exists
+ *  for: the beacon is sent when the broker answers `initialize`, so a broker
+ *  that lost the race by a moment has not sent one yet at the instant the turn
+ *  fails. That is #2057, and it is fixed by replaying. Reading it again after
+ *  the wait is what tells that case apart from #2842's, where nothing ever
+ *  arrives and the replay only buys a second full connect-wait before the same
+ *  error.
+ *
+ *  `readyBeforeWait` without `readyAfterWait` cannot happen — readiness is
+ *  recorded per spawn and only a new spawn clears it — but it is answered
+ *  rather than assumed away, because "the broker DID answer" is the safe
+ *  reading either way: a replay costs latency, refusing one costs the turn. */
+export function judgeBrokerReplay(readyBeforeWait: boolean, readyAfterWait: boolean): BrokerReplayVerdict {
+  if (readyBeforeWait) return { replay: true, reason: "ready-before-wait" };
+  if (readyAfterWait) return { replay: true, reason: "ready-during-wait" };
+  return { replay: false, reason: "never-ready" };
+}
+
 export type RecoveryKind = "stale" | "broker" | null;
 
 export interface RetryBudgets {

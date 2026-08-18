@@ -5,7 +5,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { detectRecovery, isRecoverableBrokerNotReady, isRecoverableStaleSession, abortableSleep } from "../../server/agent/retryPolicy.js";
+import { detectRecovery, isRecoverableBrokerNotReady, isRecoverableStaleSession, abortableSleep, judgeBrokerReplay } from "../../server/agent/retryPolicy.js";
 import { EVENT_TYPES } from "../../src/types/events.js";
 
 const STALE_MESSAGE = "No conversation found with session ID abc-123";
@@ -93,6 +93,35 @@ describe("detectRecovery", () => {
   it("returns null when both budgets are exhausted", () => {
     assert.equal(detectRecovery(errorEvent(STALE_MESSAGE), { stale: 0, broker: 0 }), null);
     assert.equal(detectRecovery(errorEvent(BROKER_MESSAGE), { stale: 0, broker: 0 }), null);
+  });
+});
+
+// The reading BEFORE the wait cannot decide this on its own: the beacon is sent
+// when the broker answers `initialize`, so a broker that lost the race by a
+// moment has not sent one yet at the instant the turn fails. Refusing the
+// replay on that reading would break the #2057 recovery the wait exists for.
+describe("judgeBrokerReplay", () => {
+  it("replays when the broker had already reported ready", () => {
+    assert.deepEqual(judgeBrokerReplay(true, true), { replay: true, reason: "ready-before-wait" });
+  });
+
+  // #2057: the beacon arrives DURING the wait, which is exactly the case a
+  // replay fixes.
+  it("replays when the beacon arrives during the wait", () => {
+    assert.deepEqual(judgeBrokerReplay(false, true), { replay: true, reason: "ready-during-wait" });
+  });
+
+  // #2842: nothing ever arrived, so the replay buys a second full connect-wait
+  // and ends in the same error — the 100 s the reporter measured.
+  it("refuses when no beacon ever arrived", () => {
+    assert.deepEqual(judgeBrokerReplay(false, false), { replay: false, reason: "never-ready" });
+  });
+
+  // Cannot happen — readiness is recorded per spawn and only a new spawn clears
+  // it — but "the broker DID answer" is the safe reading if it ever does:
+  // a needless replay costs latency, a refused one costs the turn.
+  it("replays when readiness somehow disappears across the wait", () => {
+    assert.deepEqual(judgeBrokerReplay(true, false), { replay: true, reason: "ready-before-wait" });
   });
 });
 

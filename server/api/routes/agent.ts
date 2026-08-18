@@ -21,7 +21,7 @@ import { runAgent } from "../../agent/index.js";
 import { INJECTED_TEXT } from "../../agent/stream.js";
 import { notifyTaskFinished } from "../../agent/webPush.js";
 import { buildTranscriptPreamble } from "../../agent/resumeFailover.js";
-import { abortableSleep, BROKER_RECONNECT_WAIT_MS, detectRecovery, type RecoveryKind, type RetryBudgets } from "../../agent/retryPolicy.js";
+import { abortableSleep, BROKER_RECONNECT_WAIT_MS, detectRecovery, judgeBrokerReplay, type RecoveryKind, type RetryBudgets } from "../../agent/retryPolicy.js";
 import { getBrokerReady } from "../../agent/brokerReadiness.js";
 import {
   recordPushReply,
@@ -680,7 +680,9 @@ const CLAUDE_CLI_SKILL_BODY_PREFIX = "Base directory for this skill: ";
 // events fall into that bucket — they update meta and are otherwise
 // invisible to clients. Everything else is treated as "normal flow":
 // broadcast + optional jsonl append + optional tool-trace side effect.
-async function handleAgentEvent(event: Awaited<ReturnType<typeof runAgent>> extends AsyncGenerator<infer E> ? E : never, ctx: EventContext): Promise<void> {
+type AgentStreamEvent = Awaited<ReturnType<typeof runAgent>> extends AsyncGenerator<infer E> ? E : never;
+
+async function handleAgentEvent(event: AgentStreamEvent, ctx: EventContext): Promise<void> {
   if (event.type === EVENT_TYPES.claudeSessionId) {
     await flushTextAccumulator(ctx);
     // claudeSessionId is a meta event — never part of a Skill→body
@@ -938,24 +940,42 @@ async function recoverStaleSession(chatSessionId: string, decoratedMessage: stri
   return preamble ? `${preamble}${decoratedMessage}` : decoratedMessage;
 }
 
-// Wait for the broker to connect, then let the caller replay the same turn
-// unchanged (#2057). Surfaces a status event so the pause isn't read as a hang.
-async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSignal): Promise<void> {
-  // Whether a startup beacon ever arrived separates the two failures that look
-  // alike here: a broker that connected and lost the race by a moment (a replay
-  // fixes it) from one that never came up at all, where the replay only doubles
-  // the time to the same error (#2842).
-  const ready = getBrokerReady(chatSessionId);
-  log.warn("agent", "mulmoclaude MCP broker not ready — retrying after a short wait", {
-    chatSessionId,
-    brokerEverReady: ready !== null,
-    ...(ready ?? {}),
-  });
+// Wait for the broker to connect, then say whether replaying the same turn can
+// still succeed (#2057, #2842). Surfaces a status event so the pause isn't read
+// as a hang.
+//
+// The startup beacon (#2898) is read on both sides of the wait, because only
+// the SECOND reading separates the two failures that produce one identical CLI
+// error: a broker that lost the race by a moment sends its beacon during the
+// wait and is fixed by a replay, while one that never came up sends nothing and
+// a replay merely buys another full connect-wait before the same error — the
+// 100 s the reporter measured.
+type BrokerRecoveryOutcome = "replay" | "give-up" | "aborted";
+
+async function recoverBrokerNotReady(chatSessionId: string, abortSignal: AbortSignal): Promise<BrokerRecoveryOutcome> {
+  const readyBeforeWait = getBrokerReady(chatSessionId);
   pushSessionEvent(chatSessionId, {
     type: EVENT_TYPES.status,
-    message: "Tools are still starting up — retrying…",
+    message: "Tools are still starting up…",
   });
   await abortableSleep(BROKER_RECONNECT_WAIT_MS, abortSignal);
+  // A stop cuts the wait short, so "no beacon yet" says nothing about the
+  // broker here. Judging anyway would log a diagnosis for a turn the user
+  // cancelled — and the caller ends it either way.
+  if (abortSignal.aborted) return "aborted";
+
+  const ready = getBrokerReady(chatSessionId);
+  const verdict = judgeBrokerReplay(readyBeforeWait !== null, ready !== null);
+  const detail = { chatSessionId, brokerEverReady: ready !== null, reason: verdict.reason, ...(ready ?? {}) };
+  if (verdict.replay) {
+    log.warn("agent", "mulmoclaude MCP broker was not ready — replaying the turn", detail);
+    return "replay";
+  }
+  log.warn("agent", "mulmoclaude MCP broker never reported ready — not replaying, the same wait would end in the same error", {
+    ...detail,
+    hint: "Look for `[mcp] broker ready` and `broker=` in server/system/logs/; `broker=tsx` means this install lacks the prebuilt broker bundle.",
+  });
+  return "give-up";
 }
 
 // What the failover stream loop reads to (re)invoke `runAgent`. A
@@ -976,13 +996,18 @@ interface FailoverStreamArgs {
 // recovery the stream asked for (or null) plus whether a real error surfaced. A
 // recovery-triggering event is swallowed (the caller retries); its error is not
 // counted, so a recovered pass reports didError=false.
+//
+// The swallowed event comes back with it. A recovery can still be REFUSED after
+// the fact — the broker one is, when nothing ever reported ready (#2842) — and
+// then this is the only copy of the failure left to show the user.
 async function streamOnce(
   runArgs: Parameters<typeof runAgent>[0],
   budgets: RetryBudgets,
   eventCtx: EventContext,
-): Promise<{ recovery: RecoveryKind; didError: boolean }> {
+): Promise<{ recovery: RecoveryKind; didError: boolean; swallowed: AgentStreamEvent | null }> {
   let recovery: RecoveryKind = null;
   let didError = false;
+  let swallowed: AgentStreamEvent | null = null;
   // A broker-not-ready replay is only safe when NOTHING executed — the failing
   // first tool call is blocked at the permission check. Once ANY tool has
   // completed successfully (an auto-approved Bash/Write, or a tool that ran
@@ -996,13 +1021,16 @@ async function streamOnce(
     // Swallow the error — the caller is about to recover. `break` abandons the
     // generator; the event is only yielded after the CLI exited, so the
     // subprocess is already dead and `for await`'s return() is the only cleanup.
-    if (recovery) break;
+    if (recovery) {
+      swallowed = event;
+      break;
+    }
     // A yielded error event (non-zero exit, missing binary, a tool surfacing an
     // error) is a real failure even though the generator didn't throw.
     if (event.type === EVENT_TYPES.error) didError = true;
     await handleAgentEvent(event, eventCtx);
   }
-  return { recovery, didError };
+  return { recovery, didError, swallowed };
 }
 
 // A recovery-triggering error is swallowed before `handleAgentEvent`, so it
@@ -1053,15 +1081,26 @@ async function runAgentStreamWithFailover(args: FailoverStreamArgs, eventCtx: Ev
     didError = didError || pass.didError;
     if (!pass.recovery) break;
 
-    discardAbortedPass(eventCtx);
     if (pass.recovery === "stale") {
+      discardAbortedPass(eventCtx);
       budgets.stale--;
       currentMessage = await recoverStaleSession(chatSessionId, decoratedMessage);
       currentClaudeSessionId = undefined;
-    } else {
-      budgets.broker--;
-      await recoverBrokerNotReady(chatSessionId, abortSignal);
+      continue;
     }
+
+    budgets.broker--;
+    if ((await recoverBrokerNotReady(chatSessionId, abortSignal)) !== "give-up") {
+      discardAbortedPass(eventCtx);
+      continue;
+    }
+    // Refused: the broker never came up, so this pass is the last one and its
+    // streamed text is kept rather than discarded — same as the second attempt
+    // used to be. The error it died on was swallowed for a replay that is no
+    // longer happening, so surface it now (#2842).
+    if (pass.swallowed) await handleAgentEvent(pass.swallowed, eventCtx);
+    didError = true;
+    break;
   }
   return didError;
 }

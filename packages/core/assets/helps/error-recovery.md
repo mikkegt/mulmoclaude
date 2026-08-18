@@ -859,7 +859,8 @@ so read these three before forming a theory:
 |---|---|
 | `spawning agent … broker=tsx` | This install is on the SLOW path: the bundle is missing, so the broker is transcoded from source on every spawn (seconds to tens of seconds over a Windows/macOS bind mount). A `broker bundle missing` warn accompanies it once per process. |
 | `[mcp] broker ready bootMs=… initializeMs=…` | The broker DID connect, and how long it took. `broker cold boot is slow` replaces it past 5 s. |
-| `brokerEverReady=false` on the retry warn | No beacon ever arrived for that chat — the broker did not come up at all, so the automatic 3 s replay will reproduce the same error and only double the wait. |
+| `brokerEverReady=false reason=never-ready` on the retry warn | No beacon arrived for that chat, on either side of the 3 s wait — the broker did not come up at all. The turn is NOT replayed: a replay would sit out another full connect wait and end in the same error. |
+| `reason=ready-during-wait` on the retry warn | The beacon arrived while the host waited, so the broker lost the race by a moment and IS connected now. The turn is replayed, which is what fixes this one. |
 
 ### Fix
 
@@ -869,7 +870,9 @@ so read these three before forming a theory:
 - `broker ready` present with a small `initializeMs`, failing anyway → it is the startup race,
   not the boot. See the scheduled-run section above.
 - `brokerEverReady=false` with no `broker ready` line anywhere → the broker never started. That
-  is the permanent load failure; check the `Cannot find module` section.
+  is the permanent load failure; check the `Cannot find module` section. The host stops after one
+  attempt here, so the error arrives in seconds rather than after two full connect waits — a fast
+  failure in this shape is the diagnosis, not a second symptom.
 - Old or unrecorded `claudeCodeVersion` alongside any of these → rule out the frozen CLI first.
 
 ---
