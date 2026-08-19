@@ -142,6 +142,8 @@ const deMessages: CollectionMessages = {
       empty: "Noch keine benutzerdefinierten Ansichten.",
     },
     customViewLoading: "Ansicht wird geladen…",
+    remoteViewPreviewImages: "{count} Bilder",
+    remoteViewPreviewImagesUnresolvable: "{count} Bilder ({unresolvable} nicht auflösbar)",
     customViewError: "Diese Ansicht konnte nicht geladen werden: {error}",
     addViewPrompt:
       'Ich möchte der Sammlung {title} eine benutzerdefinierte Ansicht hinzufügen. Frag mich, was ich sehen oder bearbeiten möchte, erstelle dann die HTML-Ansichtsdatei unter {base}/views/your-view.html und registriere sie in {base}/schema.json unter `views[]` (capabilities ["read"] für eine schreibgeschützte Ansicht, ["read","write"] wenn sie Datensätze bearbeitet). Folge der custom-view-Hilfe für den Datenvertrag.',
