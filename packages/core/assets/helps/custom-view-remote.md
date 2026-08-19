@@ -191,8 +191,10 @@ const page = await window.__MC_VIEW.getItems({ offset: 0, limit: 20, fields: ["t
   inlined image travels inside the size-capped page, so the host enforces a
   **per-page byte budget** — when the next thumbnail would overflow it, the page
   **ends there** and those records arrive on the following page with their images.
-  You get a short page, never a page with a hole in it. Smaller `imageMaxEdge`
-  and `limit` mean fewer round-trips, not better odds of an image appearing.
+  You get a short page, never a page with a hole in it. A smaller `imageMaxEdge`
+  fits more thumbnails per page, so it costs FEWER round-trips; a smaller `limit`
+  costs more. Neither changes whether an image eventually appears — that is no
+  longer something the budget can take away.
   For scale: a real photo at `imageMaxEdge: 384` inlines to roughly 15 KB, so a
   page holds on the order of 50 of them before it is cut.
 - **A field may still come back as a path, not a `data:` URL** — for a missing

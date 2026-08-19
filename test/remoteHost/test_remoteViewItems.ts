@@ -144,6 +144,49 @@ describe("createRemoteViewItems", () => {
     assert.equal(firstItem.photo, "images/a.png", "left as a path so the page still makes progress");
   });
 
+  // Both bots on #2934: with TWO image fields, the first can fit and the second
+  // overflow — the item is then deferred, so neither its thumbnail nor its count
+  // may go out. The counters have to describe the page that was actually
+  // returned, or the preview reports images the view does not have.
+  it("counts nothing from an item it defers, even when that item's first image fitted", async () => {
+    const twoFields = {
+      slug: "plan",
+      source: "project",
+      skillDir: "/s/plan",
+      dataDir: "/d/plan",
+      schema: {
+        primaryKey: "id",
+        fields: { id: { type: "string" }, photo: { type: "image" }, cover: { type: "image" } },
+        views: [view({ imageFields: ["photo", "cover"] })],
+      },
+    } as unknown as LoadedCollection;
+    const records = [
+      { id: "a", photo: "images/a.png", cover: "images/a-cover.png" },
+      { id: "b", photo: "images/b.png", cover: "images/b-cover.png" },
+    ];
+    // 30% of the budget each: item a's two fit (60%), then item b's first would
+    // fit on its own but its second crosses the line — so item b is deferred
+    // whole, and the thumbnail its first field already resolved is discarded.
+    const quarter = `data:image/jpeg;base64,${"x".repeat(Math.floor(REMOTE_VIEW_ITEMS_MAX_BYTES * 0.3))}`;
+    const build = createRemoteViewItems(
+      deps({
+        listRecords: (async () => records) as unknown as RemoteViewItemsDeps["listRecords"],
+        resolveThumbnail: (async () => quarter) as RemoteViewItemsDeps["resolveThumbnail"],
+      }),
+    );
+    const result = await build(twoFields, "gallery", { offset: 0, limit: 50, fields: ["photo", "cover"] });
+    assert.equal(result.kind, "ok");
+    if (result.kind !== "ok") return;
+    assert.equal(result.page.items.length, 1, "item b is deferred — its second image did not fit");
+    assert.equal(result.inlined, 2, "only item a's two thumbnails are on the page");
+    assert.equal(result.omitted, 0);
+    // And the deferred record must be untouched: without a `fields` projection
+    // these are the store's own objects, so a stray write would corrupt them.
+    const [deferred] = records.filter((record) => record.id === "b");
+    assert.ok(deferred);
+    assert.equal(deferred.photo, "images/b.png", "a deferred item must not be half-inlined");
+  });
+
   // An unresolvable image is not a budget problem — a smaller page cannot fix
   // it — so it is skipped in place rather than ending the page, which would
   // wedge paging at that item forever.
