@@ -50,9 +50,14 @@ Two things deliberately keep the old behaviour: an image that is **unresolvable*
 (missing file, undecodable source) is skipped in place rather than ending the
 page, because a smaller page cannot fix it and stopping there would wedge paging
 at that record forever; and a page is **never empty** — a first record whose own
-thumbnail cannot fit keeps its path, so paging always advances. The preview
-caption's `over budget` count becomes `unresolvable`, which is now all it can
-mean.
+thumbnail cannot fit keeps its path, so paging always advances.
+
+Those two are the only ways a path still reaches a view, and both are now
+**counted**: the preview caption reads `N images (M placeholders)`, where `M` is
+every image the page hands back as a path rather than a `data:` URL. An image
+that was merely deferred to the next page is not counted, because it is not on
+this one. Leaving the forced first item uncounted would have let the caption
+claim a page with no holes while showing one.
 
 ### Added
 

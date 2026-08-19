@@ -142,6 +142,41 @@ describe("createRemoteViewItems", () => {
     const [firstItem] = result.page.items;
     assert.ok(firstItem);
     assert.equal(firstItem.photo, "images/a.png", "left as a path so the page still makes progress");
+    // …and REPORTED. This is the one placeholder the page can still contain, so
+    // leaving it uncounted would make the caption claim a page with no holes
+    // (Codex on #2934). Reachable for real with `imageMaxEdge: 1024` and a
+    // high-entropy source.
+    assert.equal(result.omitted, 1, "a forced first item's over-budget image is still a placeholder — count it");
+    assert.equal(result.inlined, 0);
+  });
+
+  // The counting must cover EVERY field left as a path on a forced item, not
+  // just the one that tripped the budget.
+  it("counts every un-inlined field on a forced first item", async () => {
+    const twoFields = {
+      slug: "plan",
+      source: "project",
+      skillDir: "/s/plan",
+      dataDir: "/d/plan",
+      schema: {
+        primaryKey: "id",
+        fields: { id: { type: "string" }, photo: { type: "image" }, cover: { type: "image" } },
+        views: [view({ imageFields: ["photo", "cover"] })],
+      },
+    } as unknown as LoadedCollection;
+    const records = [{ id: "a", photo: "images/a.png", cover: "images/a-cover.png" }];
+    const huge = `data:image/jpeg;base64,${"x".repeat(REMOTE_VIEW_ITEMS_MAX_BYTES + 1)}`;
+    const build = createRemoteViewItems(
+      deps({
+        listRecords: (async () => records) as unknown as RemoteViewItemsDeps["listRecords"],
+        resolveThumbnail: (async () => huge) as RemoteViewItemsDeps["resolveThumbnail"],
+      }),
+    );
+    const result = await build(twoFields, "gallery", { offset: 0, limit: 50, fields: ["photo", "cover"] });
+    assert.equal(result.kind, "ok");
+    if (result.kind !== "ok") return;
+    assert.equal(result.page.items.length, 1);
+    assert.equal(result.omitted, 2, "both fields come back as paths, so both are reported");
   });
 
   // Both bots on #2934: with TWO image fields, the first can fit and the second

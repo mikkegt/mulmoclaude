@@ -141,7 +141,7 @@ const jaMessages: CollectionMessages = {
     },
     customViewLoading: "ビューを読み込み中…",
     remoteViewPreviewImages: "画像 {count} 枚",
-    remoteViewPreviewImagesUnresolvable: "画像 {count} 枚（{unresolvable} 枚は解決不可）",
+    remoteViewPreviewImagesPlaceholders: "画像 {count} 枚（{placeholders} 枚はプレースホルダー）",
     customViewError: "このビューを読み込めませんでした: {error}",
     addViewPrompt:
       '「{title}」コレクションにカスタムビューを追加したい。何を見たい／編集したいか質問してから、HTML ビューファイルを {base}/views/your-view.html に作成し、{base}/schema.json の `views[]` に登録して（読み取り専用なら capabilities ["read"]、レコードを編集するなら ["read","write"]）。データ契約は custom-view ヘルプに従ってください。',

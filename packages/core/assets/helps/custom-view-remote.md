@@ -198,14 +198,18 @@ const page = await window.__MC_VIEW.getItems({ offset: 0, limit: 20, fields: ["t
   For scale: a real photo at `imageMaxEdge: 384` inlines to roughly 15 KB, so a
   page holds on the order of 50 of them before it is cut.
 - **A field may still come back as a path, not a `data:` URL** — for a missing
-  file or an undecodable source, which a smaller page cannot fix. Handle both:
-  `onerror` a placeholder, or check for the `data:` prefix before rendering.
+  file or an undecodable source, which a smaller page cannot fix; and, on the
+  FIRST item of a page only, for an image so large it does not fit an empty
+  budget (deferring that one would return an empty page and stall paging).
+  Handle both: `onerror` a placeholder, or check for the `data:` prefix before
+  rendering.
 - **Cost**: inlined thumbnails are the one thing that grows a page's bytes;
   they're opt-in per view and per projection precisely so a view pays only for the
-  images it shows. The preview's caption reports `N images (M unresolvable)` —
-  `M` counts only images the host could not produce at all (missing file,
-  undecodable source). An image that merely did not fit the budget is not counted
-  there; it is deferred to the next page instead.
+  images it shows. The preview's caption reports `N images (M placeholders)` —
+  `M` counts every image the page hands back as a path, which is what you will
+  see as a placeholder. An image that merely did not fit is deferred to the next
+  page and is NOT counted; what remains is the unresolvable ones, plus the rare
+  first-item-too-large case above.
 
 ### Starting a chat — `startChat`
 

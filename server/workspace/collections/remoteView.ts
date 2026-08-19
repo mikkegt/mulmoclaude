@@ -292,7 +292,12 @@ async function inlineImages(
     for (const [field, dataUrl] of resolved.thumbnails) item[field] = dataUrl;
     used += resolved.bytes;
     inlined += resolved.thumbnails.length;
-    omitted += resolved.unresolvable;
+    // Every image this page hands back as a PATH is counted, whatever the
+    // reason. On a forced first item that includes ones that were merely over
+    // budget: it is still a placeholder the author will see, and leaving it
+    // uncounted was the one hole the no-hole guarantee did not cover (Codex on
+    // #2934). Deferred items are not counted because they are not on this page.
+    omitted += resolved.unresolvable + resolved.deferred;
     // Counted because it is going out, overflowed or not — `served` is "what
     // this page carries", so the never-empty rule lives HERE and the caller
     // just slices to it. Splitting the two is how the guard gets lost
@@ -306,18 +311,23 @@ async function inlineImages(
 /** Resolve one item's declared image fields against what is left of the budget,
  *  WITHOUT touching the item. The caller commits or discards the whole result,
  *  so an item can never go out half-inlined while its counters say otherwise
- *  (Codex + CodeRabbit on #2934). */
+ *  (Codex + CodeRabbit on #2934).
+ *
+ *  `deferred` counts the fields left un-inlined once the budget ran out. It
+ *  matters only for a forced first item, which goes out anyway: those fields
+ *  travel as paths, and the caller counts them so nothing reaches the view as a
+ *  placeholder without being reported. */
 async function resolveItemImages(
   item: RemoteViewItem,
   fields: string[],
   maxEdge: number,
   resolve: typeof resolveThumbnail,
   remaining: number,
-): Promise<{ thumbnails: [string, string][]; bytes: number; unresolvable: number; overflowed: boolean }> {
+): Promise<{ thumbnails: [string, string][]; bytes: number; unresolvable: number; deferred: number; overflowed: boolean }> {
   const thumbnails: [string, string][] = [];
   let bytes = 0;
   let unresolvable = 0;
-  for (const field of fields) {
+  for (const [index, field] of fields.entries()) {
     const value = item[field];
     if (typeof value !== "string" || value.length === 0 || value.startsWith("data:")) continue;
     const dataUrl = await resolve(value, maxEdge);
@@ -327,11 +337,24 @@ async function resolveItemImages(
       unresolvable += 1;
       continue;
     }
-    if (bytes + dataUrl.length > remaining) return { thumbnails, bytes, unresolvable, overflowed: true };
+    // Over budget. Count this field and every remaining one that still holds a
+    // path — no resolving, just counting, so the caller can report them if this
+    // item is forced out.
+    if (bytes + dataUrl.length > remaining) {
+      return { thumbnails, bytes, unresolvable, deferred: countPathFields(item, fields.slice(index)), overflowed: true };
+    }
     thumbnails.push([field, dataUrl]);
     bytes += dataUrl.length;
   }
-  return { thumbnails, bytes, unresolvable, overflowed: false };
+  return { thumbnails, bytes, unresolvable, deferred: 0, overflowed: false };
+}
+
+/** How many of `fields` still hold an un-inlined path on `item`. */
+function countPathFields(item: RemoteViewItem, fields: string[]): number {
+  return fields.filter((field) => {
+    const value = item[field];
+    return typeof value === "string" && value.length > 0 && !value.startsWith("data:");
+  }).length;
 }
 
 export const createRemoteViewItems =

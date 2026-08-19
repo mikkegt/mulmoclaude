@@ -141,7 +141,7 @@ const koMessages: CollectionMessages = {
     },
     customViewLoading: "보기를 불러오는 중…",
     remoteViewPreviewImages: "이미지 {count}장",
-    remoteViewPreviewImagesUnresolvable: "이미지 {count}장 ({unresolvable}장 확인 불가)",
+    remoteViewPreviewImagesPlaceholders: "이미지 {count}장 ({placeholders}장 자리표시자)",
     customViewError: "이 보기를 불러오지 못했습니다: {error}",
     addViewPrompt:
       '{title} 컬렉션에 사용자 지정 보기를 추가하고 싶어요. 무엇을 보거나 편집하고 싶은지 먼저 물어본 뒤, {base}/views/your-view.html 에 HTML 보기 파일을 만들고 {base}/schema.json의 `views[]`에 등록해 주세요(읽기 전용 보기는 capabilities ["read"], 레코드를 편집하면 ["read","write"]). 데이터 계약은 custom-view 도움말을 따르세요.',

@@ -140,7 +140,7 @@ const zhMessages: CollectionMessages = {
     },
     customViewLoading: "正在加载视图…",
     remoteViewPreviewImages: "{count} 张图片",
-    remoteViewPreviewImagesUnresolvable: "{count} 张图片（{unresolvable} 张无法解析）",
+    remoteViewPreviewImagesPlaceholders: "{count} 张图片（{placeholders} 张占位）",
     customViewError: "无法加载此视图：{error}",
     addViewPrompt:
       '我想为“{title}”集合添加一个自定义视图。先问我想查看或编辑什么，然后在 {base}/views/your-view.html 创建 HTML 视图文件，并在 {base}/schema.json 的 `views[]` 中注册（只读视图用 capabilities ["read"]，需要编辑记录则用 ["read","write"]）。数据契约请遵循 custom-view 帮助文档。',
