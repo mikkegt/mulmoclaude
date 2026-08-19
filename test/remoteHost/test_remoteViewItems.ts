@@ -167,11 +167,11 @@ describe("createRemoteViewItems", () => {
     // 30% of the budget each: item a's two fit (60%), then item b's first would
     // fit on its own but its second crosses the line — so item b is deferred
     // whole, and the thumbnail its first field already resolved is discarded.
-    const quarter = `data:image/jpeg;base64,${"x".repeat(Math.floor(REMOTE_VIEW_ITEMS_MAX_BYTES * 0.3))}`;
+    const thirtyPercent = `data:image/jpeg;base64,${"x".repeat(Math.floor(REMOTE_VIEW_ITEMS_MAX_BYTES * 0.3))}`;
     const build = createRemoteViewItems(
       deps({
         listRecords: (async () => records) as unknown as RemoteViewItemsDeps["listRecords"],
-        resolveThumbnail: (async () => quarter) as RemoteViewItemsDeps["resolveThumbnail"],
+        resolveThumbnail: (async () => thirtyPercent) as RemoteViewItemsDeps["resolveThumbnail"],
       }),
     );
     const result = await build(twoFields, "gallery", { offset: 0, limit: 50, fields: ["photo", "cover"] });

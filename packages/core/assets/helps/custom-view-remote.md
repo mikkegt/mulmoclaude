@@ -202,9 +202,10 @@ const page = await window.__MC_VIEW.getItems({ offset: 0, limit: 20, fields: ["t
   `onerror` a placeholder, or check for the `data:` prefix before rendering.
 - **Cost**: inlined thumbnails are the one thing that grows a page's bytes;
   they're opt-in per view and per projection precisely so a view pays only for the
-  images it shows. The preview's caption reports `N images (M over budget)`, where
-  `M` now counts only the unresolvable ones — over-budget images are deferred to
-  the next page rather than reported here.
+  images it shows. The preview's caption reports `N images (M unresolvable)` —
+  `M` counts only images the host could not produce at all (missing file,
+  undecodable source). An image that merely did not fit the budget is not counted
+  there; it is deferred to the next page instead.
 
 ### Starting a chat — `startChat`
 
