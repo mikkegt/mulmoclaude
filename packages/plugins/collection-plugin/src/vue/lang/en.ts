@@ -138,6 +138,8 @@ const enMessages = {
       empty: "No custom views yet.",
     },
     customViewLoading: "Loading view…",
+    remoteViewPreviewImages: "{count} images",
+    remoteViewPreviewImagesPlaceholders: "{count} images ({placeholders} placeholders)",
     customViewError: "Couldn't load this view: {error}",
     addViewPrompt:
       'I want to add a custom view to the "{title}" collection. Ask me what I want to see or edit, then author the HTML view file at {base}/views/your-view.html and register it in {base}/schema.json under `views[]` (capabilities ["read"] for a read-only view, ["read","write"] if it edits records). Follow the custom-view help for the data contract.',

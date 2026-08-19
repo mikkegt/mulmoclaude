@@ -142,6 +142,8 @@ const frMessages: CollectionMessages = {
       empty: "Aucune vue personnalisée pour le moment.",
     },
     customViewLoading: "Chargement de la vue…",
+    remoteViewPreviewImages: "{count} images",
+    remoteViewPreviewImagesPlaceholders: "{count} images ({placeholders} espaces réservés)",
     customViewError: "Impossible de charger cette vue : {error}",
     addViewPrompt:
       'Je veux ajouter une vue personnalisée à la collection « {title} ». Demande-moi ce que je veux voir ou modifier, puis crée le fichier HTML de la vue dans {base}/views/your-view.html et enregistre-le dans {base}/schema.json sous `views[]` (capabilities ["read"] pour une vue en lecture seule, ["read","write"] si elle modifie des enregistrements). Suis l\'aide custom-view pour le contrat de données.',

@@ -142,6 +142,8 @@ const ptBRMessages: CollectionMessages = {
       empty: "Ainda não há visualizações personalizadas.",
     },
     customViewLoading: "Carregando visualização…",
+    remoteViewPreviewImages: "{count} imagens",
+    remoteViewPreviewImagesPlaceholders: "{count} imagens ({placeholders} espaços reservados)",
     customViewError: "Não foi possível carregar esta visualização: {error}",
     addViewPrompt:
       'Quero adicionar uma visualização personalizada à coleção "{title}". Pergunte o que eu quero ver ou editar, depois crie o arquivo HTML da visualização em {base}/views/your-view.html e registre-o em {base}/schema.json em `views[]` (capabilities ["read"] para uma visualização somente leitura, ["read","write"] se editar registros). Siga a ajuda custom-view para o contrato de dados.',

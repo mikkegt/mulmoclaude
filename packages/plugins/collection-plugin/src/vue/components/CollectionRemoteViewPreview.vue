@@ -66,15 +66,28 @@ const srcdoc = ref<string | null>(null);
 const bytes = ref(0);
 const iframeEl = ref<HTMLIFrameElement | null>(null);
 // Last page's inlined/omitted image counts — surfaced so the author sees how
-// many thumbnails fit the per-page budget while iterating (numeric, no locale
-// keys, like the byte caption).
+// many thumbnails fit the per-page budget while iterating.
+//
+// Since #2924 `omitted` counts the images this page hands back as a PATH — the
+// placeholders the author will actually see. Usually that means unresolvable
+// (missing file, undecodable source), because an over-budget image is deferred
+// to the next page rather than dropped; the exception is a first item forced
+// out to keep paging alive, whose over-budget images do travel as paths and are
+// counted here too. Said through `t()` because it is a WORD an author has to
+// read, unlike the byte figures beside it (Codex on #2934; the counts used to
+// be called locale-free, which stopped being true the moment the caption had to
+// name what went wrong).
 const imageStats = ref<{ inlined: number; omitted: number } | null>(null);
 
 const sizeCaption = computed(() => {
   const base = `${Math.max(1, Math.round(bytes.value / 1024))} KB / ${Math.round(REMOTE_VIEW_MAX_BYTES / 1024)} KB`;
   const stats = imageStats.value;
   if (!stats || (stats.inlined === 0 && stats.omitted === 0)) return base;
-  return stats.omitted > 0 ? `${base} · ${stats.inlined} images (${stats.omitted} over budget)` : `${base} · ${stats.inlined} images`;
+  const images =
+    stats.omitted > 0
+      ? t("collectionsView.remoteViewPreviewImagesPlaceholders", { count: stats.inlined, placeholders: stats.omitted })
+      : t("collectionsView.remoteViewPreviewImages", { count: stats.inlined });
+  return `${base} · ${images}`;
 });
 
 // Resolved once in setup (see CollectionCustomView) — the loads below run
