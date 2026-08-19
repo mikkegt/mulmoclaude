@@ -68,13 +68,18 @@ const iframeEl = ref<HTMLIFrameElement | null>(null);
 // Last page's inlined/omitted image counts — surfaced so the author sees how
 // many thumbnails fit the per-page budget while iterating (numeric, no locale
 // keys, like the byte caption).
+//
+// Since #2924 `omitted` means UNRESOLVABLE (missing file, undecodable source),
+// not over-budget: an image that would overflow the budget now ends the page
+// early and travels on the next one instead of being dropped. A smaller page
+// cannot fix an unresolvable image, so the caption says so.
 const imageStats = ref<{ inlined: number; omitted: number } | null>(null);
 
 const sizeCaption = computed(() => {
   const base = `${Math.max(1, Math.round(bytes.value / 1024))} KB / ${Math.round(REMOTE_VIEW_MAX_BYTES / 1024)} KB`;
   const stats = imageStats.value;
   if (!stats || (stats.inlined === 0 && stats.omitted === 0)) return base;
-  return stats.omitted > 0 ? `${base} · ${stats.inlined} images (${stats.omitted} over budget)` : `${base} · ${stats.inlined} images`;
+  return stats.omitted > 0 ? `${base} · ${stats.inlined} images (${stats.omitted} unresolvable)` : `${base} · ${stats.inlined} images`;
 });
 
 // Resolved once in setup (see CollectionCustomView) — the loads below run

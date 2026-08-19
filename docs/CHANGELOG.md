@@ -8,6 +8,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+### Fixed
+
+#### A phone view's page ends early instead of coming back with a hole in it (#2924)
+
+A mobile view's images are inlined host-side as `data:` thumbnails, inside a
+900 KB per-page budget — a phone view gets no view token and no `dataUrl`, so
+unlike a desktop view it cannot resolve an image on demand afterwards. When the
+budget ran out, the offending field was left as its path and the walk carried
+ON, so a smaller thumbnail later in the same page still fitted. The page then
+arrived with one arbitrary record showing a placeholder while its neighbours
+were fine — which reads as a corrupt record, not as a page that was too heavy.
+No error anywhere, and on mobile no way to recover: that image was simply never
+going to appear.
+
+The budget now ends the page instead. The records that did not fit travel on the
+NEXT page, with their thumbnails. `total` still counts every record behind the
+view and `limit` reports what was actually returned, so the documented paging
+idiom — `getItems({ offset: loaded.length })`, stop on `loaded.length >= total` —
+carries on unchanged and skips nothing. A view that instead advances by the limit
+it requested would skip records; both examples in `custom-view-remote.md` use
+`loaded.length`, and the help now states the guarantee explicitly.
+
+Measured on real photographs through the shipped resize (rotate → fit inside →
+JPEG q72), at `imageMaxEdge: 384` and the default page limit of 50:
+
+| thumbnail | before | after |
+|---|---|---|
+| ≤17 KB | 50 shown, 0 placeholders | unchanged |
+| 18 KB | 48 shown, **2 placeholders** | 48 items, 0 placeholders |
+| 20 KB | 43 shown, **7 placeholders** | 43 items, 0 placeholders |
+| 25 KB | 34 shown, **16 placeholders** | 34 items, 0 placeholders |
+
+The same images render either way; what changes is whether the rest of the page
+arrives broken now or intact on the next scroll. A real photo at 384 px inlines
+to about 15 KB, which puts the default 50-record page just under the budget —
+close enough that a collection of ordinary photos lands on the boundary and
+loses one or two, which is what #2924 reported.
+
+Two things deliberately keep the old behaviour: an image that is **unresolvable**
+(missing file, undecodable source) is skipped in place rather than ending the
+page, because a smaller page cannot fix it and stopping there would wedge paging
+at that record forever; and a page is **never empty** — a first record whose own
+thumbnail cannot fit keeps its path, so paging always advances. The preview
+caption's `over budget` count becomes `unresolvable`, which is now all it can
+mean.
+
 ### Added
 
 #### `@mulmoclaude/core@4.3.0` — `putItems` reports the value shapes it does not refuse (mulmoterminal#1763)

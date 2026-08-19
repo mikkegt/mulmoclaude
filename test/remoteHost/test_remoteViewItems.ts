@@ -95,20 +95,66 @@ describe("createRemoteViewItems", () => {
     assert.equal(item.photo, "images/a.png"); // photo not declared → left as path
   });
 
-  it("stops inlining once the page byte budget is exceeded, leaving the rest as paths", async () => {
-    // Each thumbnail is half the budget, so the first fits and the second overflows.
+  // #2924. The budget used to drop the offending image and carry on, so a page
+  // came back with one arbitrary hole — the item whose thumbnail happened not to
+  // fit — which reads as a corrupt record, not as a page that was too heavy. It
+  // now ends the page there instead; the rest travel on the next one WITH their
+  // thumbnails.
+  it("returns a short page rather than a page with a missing thumbnail", async () => {
+    // Each thumbnail is half the budget, so the first fits and the second cannot.
     const big = `data:image/jpeg;base64,${"x".repeat(Math.floor(REMOTE_VIEW_ITEMS_MAX_BYTES / 2))}`;
     const build = createRemoteViewItems(deps({ resolveThumbnail: (async () => big) as RemoteViewItemsDeps["resolveThumbnail"] }));
     const result = await build(collection(view({ imageFields: ["photo"] })), "gallery", { offset: 0, limit: 50, fields: ["photo"] });
     assert.equal(result.kind, "ok");
     if (result.kind !== "ok") return;
     assert.equal(result.inlined, 1);
-    assert.equal(result.omitted, 1);
-    const [firstItem, secondItem] = result.page.items;
+    assert.equal(result.omitted, 0, "nothing was dropped — the page was cut instead");
+    assert.equal(result.page.items.length, 1, "the item that did not fit belongs to the next page");
+    const [firstItem] = result.page.items;
     assert.ok(firstItem);
-    assert.ok(secondItem);
-    assert.equal(firstItem.photo, big); // inlined
-    assert.equal(secondItem.photo, "images/b.png"); // left as path (over budget)
+    assert.equal(firstItem.photo, big);
+  });
+
+  // `total` counts the records behind the view, not the ones on this page — it is
+  // what the documented paging idiom stops on (`loaded.length >= total`). Cutting
+  // it here would hide the very records the cut deferred.
+  it("keeps `total` whole and reports the returned count as `limit`", async () => {
+    const big = `data:image/jpeg;base64,${"x".repeat(Math.floor(REMOTE_VIEW_ITEMS_MAX_BYTES / 2))}`;
+    const build = createRemoteViewItems(deps({ resolveThumbnail: (async () => big) as RemoteViewItemsDeps["resolveThumbnail"] }));
+    const result = await build(collection(view({ imageFields: ["photo"] })), "gallery", { offset: 0, limit: 50, fields: ["photo"] });
+    assert.equal(result.kind, "ok");
+    if (result.kind !== "ok") return;
+    assert.equal(result.page.total, RECORDS.length);
+    assert.equal(result.page.limit, result.page.items.length);
+    assert.equal(result.page.offset, 0);
+  });
+
+  // The guard that keeps paging alive: a first item whose own thumbnail cannot
+  // fit would otherwise be asked for forever at the same offset. It keeps its
+  // path — the old placeholder degradation — so the page always advances.
+  it("never returns an empty page, even when the first thumbnail alone is over budget", async () => {
+    const huge = `data:image/jpeg;base64,${"x".repeat(REMOTE_VIEW_ITEMS_MAX_BYTES + 1)}`;
+    const build = createRemoteViewItems(deps({ resolveThumbnail: (async () => huge) as RemoteViewItemsDeps["resolveThumbnail"] }));
+    const result = await build(collection(view({ imageFields: ["photo"] })), "gallery", { offset: 0, limit: 50, fields: ["photo"] });
+    assert.equal(result.kind, "ok");
+    if (result.kind !== "ok") return;
+    assert.equal(result.page.items.length, 1);
+    const [firstItem] = result.page.items;
+    assert.ok(firstItem);
+    assert.equal(firstItem.photo, "images/a.png", "left as a path so the page still makes progress");
+  });
+
+  // An unresolvable image is not a budget problem — a smaller page cannot fix
+  // it — so it is skipped in place rather than ending the page, which would
+  // wedge paging at that item forever.
+  it("skips an unresolvable image in place instead of cutting the page", async () => {
+    const build = createRemoteViewItems(deps({ resolveThumbnail: (async () => null) as unknown as RemoteViewItemsDeps["resolveThumbnail"] }));
+    const result = await build(collection(view({ imageFields: ["photo"] })), "gallery", { offset: 0, limit: 50, fields: ["photo"] });
+    assert.equal(result.kind, "ok");
+    if (result.kind !== "ok") return;
+    assert.equal(result.inlined, 0);
+    assert.equal(result.omitted, RECORDS.length);
+    assert.equal(result.page.items.length, RECORDS.length, "the page is not cut short by an unresolvable image");
   });
 
   it("serves host-resolved computed fields (ref-crossing derived, etc.) the resolver produced", async () => {

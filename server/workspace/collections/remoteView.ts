@@ -253,35 +253,51 @@ function inlineFields(view: CollectionCustomView, schema: CollectionSchema, requ
   return declared.filter((name) => schema.fields[name]?.type === "image" && (kept === null || kept.has(name)));
 }
 
-/** Replace declared image paths with thumbnail `data:` URLs in place, stopping
- *  once the accumulated thumbnail bytes would exceed `budget` — a field left as
- *  its path (over budget, unresolvable, or already inlined) counts as `omitted`
- *  and the view renders it as a placeholder. */
+/** Replace declared image paths with thumbnail `data:` URLs in place, and say
+ *  how many items were fully served before the byte budget ran out (#2924).
+ *
+ *  Running out of budget STOPS the walk rather than skipping the offending
+ *  field and carrying on. That distinction is the whole fix: skipping meant a
+ *  page came back with one arbitrary hole in it — the item whose thumbnail
+ *  happened not to fit, while smaller ones after it still did — which reads as
+ *  a corrupt record rather than as a page that was too heavy. The caller turns
+ *  `fitted` into a SHORT PAGE instead, and the view pages on for the rest.
+ *
+ *  `omitted` survives for the one case a short page cannot express: a field
+ *  that is unresolvable (missing file, unsupported format) rather than merely
+ *  over budget. Those are skipped in place, as before — stopping on them would
+ *  wedge the page at that item forever. */
 async function inlineImages(
   items: RemoteViewItem[],
   fields: string[],
   maxEdge: number,
   resolve: typeof resolveThumbnail,
   budget: number,
-): Promise<{ inlined: number; omitted: number }> {
+): Promise<{ inlined: number; omitted: number; fitted: number }> {
   let used = 0;
   let inlined = 0;
   let omitted = 0;
+  let fitted = 0;
   for (const item of items) {
     for (const field of fields) {
       const value = item[field];
       if (typeof value !== "string" || value.length === 0 || value.startsWith("data:")) continue;
-      const dataUrl = used < budget ? await resolve(value, maxEdge) : null;
-      if (dataUrl && used + dataUrl.length <= budget) {
-        item[field] = dataUrl;
-        used += dataUrl.length;
-        inlined += 1;
-      } else {
+      const dataUrl = await resolve(value, maxEdge);
+      // Unresolvable: not a budget problem, so it cannot be fixed by asking for
+      // a smaller page. Leave the path and keep going.
+      if (dataUrl === null) {
         omitted += 1;
+        continue;
       }
+      // Over budget: everything from THIS item on belongs to the next page.
+      if (used + dataUrl.length > budget) return { inlined, omitted, fitted };
+      item[field] = dataUrl;
+      used += dataUrl.length;
+      inlined += 1;
     }
+    fitted += 1;
   }
-  return { inlined, omitted };
+  return { inlined, omitted, fitted };
 }
 
 export const createRemoteViewItems =
@@ -309,9 +325,33 @@ export const createRemoteViewItems =
     // Budget the thumbnails against what's left of the doc after the base JSON,
     // so the serialized page stays under the cap.
     const budget = REMOTE_VIEW_ITEMS_MAX_BYTES - baseBytes;
-    const { inlined, omitted } = await inlineImages(page.items, fields, clampImageMaxEdge(view.imageMaxEdge), deps.resolveThumbnail, Math.max(0, budget));
-    return { kind: "ok", page, inlined, omitted };
+    const { inlined, omitted, fitted } = await inlineImages(
+      page.items,
+      fields,
+      clampImageMaxEdge(view.imageMaxEdge),
+      deps.resolveThumbnail,
+      Math.max(0, budget),
+    );
+    return { kind: "ok", page: truncateToFitted(page, fitted), inlined, omitted };
   };
+
+/** Cut the page down to the items whose images all fitted the budget, so the
+ *  rest travel on the NEXT page with their thumbnails intact (#2924).
+ *
+ *  `total` is deliberately untouched: it counts the records behind the view, not
+ *  the ones on this page, and it is what the documented paging idiom stops on
+ *  (`loaded.length >= total` — see `custom-view-remote.md`). `limit` reports what
+ *  was actually returned, so a view advancing by the RESPONSE's limit is also
+ *  correct; the idiom advances by `items.length`, which is correct either way.
+ *
+ *  Never returns an empty page. A first item whose own image cannot fit would
+ *  otherwise be requested forever at the same offset — it keeps its path (the
+ *  old placeholder degradation) so the page always makes progress. */
+function truncateToFitted(page: RemoteViewPage, fitted: number): RemoteViewPage {
+  if (fitted >= page.items.length) return page;
+  const items = page.items.slice(0, Math.max(1, fitted));
+  return { ...page, items, limit: items.length };
+}
 
 export const remoteViewItems = createRemoteViewItems({ listRecords: (collection) => storeFor(collection).list(), enrichItems, resolveThumbnail });
 
