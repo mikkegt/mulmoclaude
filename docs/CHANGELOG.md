@@ -324,9 +324,41 @@ ONLY through a `mulmoclaude` publish. Until that happens, an npm-installed
 sandboxed agent gets the `itemsFile` argument without the container-path
 translation behind it.
 
+### Changed
+
+#### `@mulmoclaude/mulmoscript-plugin@3.1.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
+
+Released 2026-08-24. The plugin's peer declaration still read `^1.1.1` while both
+hosts had moved to deck-web 2.0.0, so every install printed
+`incorrect peer dependency` and npm 7+ consumers would have hit `ERESOLVE`.
+
+The declaration was stale rather than wrong: the plugin uses exactly two things
+from deck-web — `MulmoScriptDeckEditor` (one dynamic import in `View.vue`, mounted
+when every beat is a `slide`) and the `SlideLayout` / `SlideTheme` types — and
+`MulmoScriptDeckEditor.vue.d.ts` is byte-identical between 1.1.1 and 2.0.0. The
+2.0.0 major adds the `BeatListEditor` family and deprecates the iframe editor; it
+does not change the contract this plugin consumes.
+
+That also settles the stylesheet question 2.0.0 raises. Its new
+`@mulmocast/deck-web/style.css` carries the Tailwind utilities `beatToHtml` and
+`generateSlideFragment` emit — neither of which is in the shipped bundle. The path
+this plugin takes, `MulmoScriptDeckEditor` -> `SlidePreview`, renders through
+`<iframe srcdoc>` with a complete document from `generateSlideHTML()`, so it
+depends on no host stylesheet and none was added.
+
+No behaviour change and no source change — only the declared floor moves, which is
+what stops a host from assembling a deck-web 1.x combination the code is not
+tested against. Hosts satisfy the peer themselves; the launcher's dep range follows
+the workspace-lockstep ratchet, and its OWN version stays put.
+
+The deck editor's rendering has no automated coverage in this repo — nothing
+references the `mulmo-script-deck-editor` testid and `mulmo-script-edit.spec.ts`
+does not exercise a slide deck — so this rests on the contract being identical,
+not on a run.
+
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@3.0.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@3.1.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 
