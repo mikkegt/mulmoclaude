@@ -1229,10 +1229,20 @@
     protobufjs "^7.5.4"
     ws "^8.18.0"
 
-"@google/genai@^2.13.0", "@google/genai@^2.15.0":
+"@google/genai@^2.15.0":
   version "2.15.0"
   resolved "https://registry.yarnpkg.com/@google/genai/-/genai-2.15.0.tgz#f087b7c20b26249b587aa8750a73149df708fd23"
   integrity sha512-Q41TvqwBQ9NcmWdh6qxY5qrpg+0FaVHD7febQoH007pykxzco4ohScBUP4BBBy+Q8j5D8euIBSRIBDfWuNVCKA==
+  dependencies:
+    google-auth-library "^10.3.0"
+    p-retry "^4.6.2"
+    protobufjs "^7.5.4"
+    ws "^8.18.0"
+
+"@google/genai@^2.17.1":
+  version "2.18.0"
+  resolved "https://registry.yarnpkg.com/@google/genai/-/genai-2.18.0.tgz#f5011c99dba8a5b771cf72ca84b48b0f8226266b"
+  integrity sha512-uy9gWVTAZXuA/2tld0QJl/QNiGEn4QOmfX4PiRgZQmeFQRQhojpD/Gf41SPnBJmjEnT83a+h4AdU1HHYaYvVDw==
   dependencies:
     google-auth-library "^10.3.0"
     p-retry "^4.6.2"
@@ -2044,10 +2054,10 @@
     zod "^3.25 || ^4.0"
     zod-to-json-schema "^3.25.1"
 
-"@modernized/fluent-ffmpeg@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@modernized/fluent-ffmpeg/-/fluent-ffmpeg-1.0.2.tgz#d300afd52c32c7617636cf4257af47a5a0ba219e"
-  integrity sha512-cQeJuTlOS9RH0AKu7p1h/B9CwPdXnkQonSHtvfYNusc23z36Rkab0LfS+ghu+QbBbPB+oxaTEgFw6YV1sxMl9w==
+"@modernized/fluent-ffmpeg@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@modernized/fluent-ffmpeg/-/fluent-ffmpeg-1.0.3.tgz#427fe10a6a0b496223edf54b3b4d15e2ad8e0068"
+  integrity sha512-Xhj63pbYL42MhzqFX7+U2oBV3hRSnpJMHBd0QchLtbfom4bs+M8xEWczbEl1HOZtVjueIxIHRU1EINcZDvTt1Q==
   dependencies:
     which "^6.0.1"
 
@@ -2056,31 +2066,26 @@
   resolved "https://registry.yarnpkg.com/@mozilla/readability/-/readability-0.6.0.tgz#134e3ce3ff1676716e550de0b8de957bcc59208b"
   integrity sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ==
 
-"@mulmocast/deck-web@^1.1.1":
-  version "1.1.1"
-  resolved "https://registry.yarnpkg.com/@mulmocast/deck-web/-/deck-web-1.1.1.tgz#40d835c9a3e745348106923aabb7f4597a865262"
-  integrity sha512-YLyIDTIdhxbnDAmXuLv+6r+jX5qdcyMNJ+9UF7CXfb4iN/YUnZrAPlNVe5mCwyRzAg8fhwv85efxzzJeGKx2UQ==
+"@mulmocast/deck-web@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/@mulmocast/deck-web/-/deck-web-2.0.0.tgz#d5de0a69d15bbafcf0f4ac5cb268e6725a6c4cb8"
+  integrity sha512-d7eLR2IK5r75oS/naZddVENwQjR2B7rzlIYdGWfU0617W4RVxd7f2g2pL1X2NIWnNn36T7CwdgXncOPBI4rC0g==
+  dependencies:
+    dompurify "^3.4.14"
 
-"@mulmocast/deck@^0.7.0":
-  version "0.7.1"
-  resolved "https://registry.yarnpkg.com/@mulmocast/deck/-/deck-0.7.1.tgz#3485e882503d120b58830ff2d9d0d281c4cb9ca8"
-  integrity sha512-Tao0mvLUXnkpMRnWHTAYkeRaqKmMsUaUobluis82sBnUTFrZudDByiQgr+x3YuF9Djpp4t0TAOGmLQ0JKADhHA==
+"@mulmocast/deck@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/@mulmocast/deck/-/deck-2.0.0.tgz#e4b6c7079c7100caf53d3f88525d84d361675b9a"
+  integrity sha512-XKpytrEidr86dQyJMXEWPEGDrWdHLi/ziECEPC34VugHmsWxu9L3r04T49gAvZMpqBLJ5H478bYrLT8yInET1w==
   dependencies:
     zod "^4.4.3"
 
-"@mulmocast/deck@^1.0.0", "@mulmocast/deck@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@mulmocast/deck/-/deck-1.1.0.tgz#dbf399a140614b59d7a47fb4182d79d0a3b01825"
-  integrity sha512-ofhi1NVwwzl/Fg/WCkOZMkGGx5sf/1IHWKEoOkgffCscIbmTncbjblpH/Zv8/mErSh5kH9gkQPtl8lLvLpbtzg==
+"@mulmocast/types@^2.11.0":
+  version "2.11.0"
+  resolved "https://registry.yarnpkg.com/@mulmocast/types/-/types-2.11.0.tgz#0f4c2d3f9b144e06b83ac674199ebc8b6758efab"
+  integrity sha512-6Kh50arDCtQo4nAI34TnQCuTDsYFmY7yVUs1yBAke8Hscurckp/f36wFmfav/3LIggFlwW3b+nwzJ+xp01uFDA==
   dependencies:
-    zod "^4.4.3"
-
-"@mulmocast/types@^2.9.0":
-  version "2.9.0"
-  resolved "https://registry.yarnpkg.com/@mulmocast/types/-/types-2.9.0.tgz#ac7dcf3508574ec31d4db1b56dfd6e98ee6e8b11"
-  integrity sha512-UkJUKTdEbgdZbQlCLGZv7469CX0AA565q8d4PDx9SXrai+fz75X2GPMZbk0lJId9qp9hjs3JmyWv7FVWK39/dg==
-  dependencies:
-    "@mulmocast/deck" "^0.7.0"
+    "@mulmocast/deck" "^2.0.0"
     zod "^4.4.3"
 
 "@mulmochat-plugin/quiz@^2.0.0":
@@ -2436,6 +2441,14 @@
   integrity sha512-B/gKoqlFkzhvzsI6jo9K1cZz9o5ypviVv/xu8CwA4grZzyVwN+XfkT+tu8T1zrauuEXv6VhS2oGX+6NL95WcKA==
   dependencies:
     modern-tar "^0.7.6"
+    yargs "^18.0.0"
+
+"@puppeteer/browsers@3.2.1":
+  version "3.2.1"
+  resolved "https://registry.yarnpkg.com/@puppeteer/browsers/-/browsers-3.2.1.tgz#3e55213975c3e574c77c1abc7fed3e947c01ab47"
+  integrity sha512-KDz+3qDRdBAlRlMjmKyj6dEs33YHTk/xRHEENSXq6TNnhgoU15ruSHtEBeVF6OZ9tBDY55Se4P0nFMNsipzU9A==
+  dependencies:
+    modern-tar "^0.8.0"
     yargs "^18.0.0"
 
 "@rolldown/binding-android-arm64@1.2.1":
@@ -5156,6 +5169,11 @@ devtools-protocol@0.0.1653615:
   resolved "https://registry.yarnpkg.com/devtools-protocol/-/devtools-protocol-0.0.1653615.tgz#c600e0c619612156b2422a66d958ba188d87dbe8"
   integrity sha512-pGVkY3T/qXxAp2nFPodwYqOevk6ncNMSmvL8QfRCx5ZWGd6Vor7AFNmyaA8Zs6uJyP1QAfjuLandCgvSix1BNA==
 
+devtools-protocol@0.0.1666840:
+  version "0.0.1666840"
+  resolved "https://registry.yarnpkg.com/devtools-protocol/-/devtools-protocol-0.0.1666840.tgz#796cbc307f82750afc13a3b471c829bf3da19a65"
+  integrity sha512-gCcO42XCHKEs7Ag0S7aGYsnJ7hlgrO3qderYqeiY0Eqk+0GFfuvT13IA0hHreJTa2KCdDVyGMeOhdMNmrrTjVg==
+
 dfa@^1.2.0:
   version "1.2.0"
   resolved "https://registry.yarnpkg.com/dfa/-/dfa-1.2.0.tgz#96ac3204e2d29c49ea5b57af8d92c2ae12790657"
@@ -5227,6 +5245,13 @@ dompurify@*, dompurify@^3.3.1, dompurify@^3.3.3, dompurify@^3.4.13:
   version "3.4.13"
   resolved "https://registry.yarnpkg.com/dompurify/-/dompurify-3.4.13.tgz#fc28949d59f92d62e28a3a764bcbeee35897a1be"
   integrity sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==
+  optionalDependencies:
+    "@types/trusted-types" "^2.0.7"
+
+dompurify@^3.4.14:
+  version "3.4.14"
+  resolved "https://registry.yarnpkg.com/dompurify/-/dompurify-3.4.14.tgz#a789edb2c7bcdb69a93713a34edb7e0a5245d8c9"
+  integrity sha512-dVoH9z+MY+C9IilgGCk3YfFqjLi3fChm2OiKJMzh6axrJ5qwxqWaZamgmHrpv22CN/KdbZJuGEGgfQoL00LTdg==
   optionalDependencies:
     "@types/trusted-types" "^2.0.7"
 
@@ -7763,6 +7788,11 @@ marked@^16.3.0:
   resolved "https://registry.yarnpkg.com/marked/-/marked-16.4.2.tgz#4959a64be6c486f0db7467ead7ce288de54290a3"
   integrity sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==
 
+marked@^18.0.10:
+  version "18.0.10"
+  resolved "https://registry.yarnpkg.com/marked/-/marked-18.0.10.tgz#a09ac1f54e378b9efc8b31707adc188fdc047d2e"
+  integrity sha512-FJeH4bRpYoXiggcgriCGItKCSv3xkngJc4QCZ/rkQCogU3VYaLxYJoZl8Nw/b4+x7iij/pd+09mZ6A1dXzpL0A==
+
 marked@^18.0.7:
   version "18.0.7"
   resolved "https://registry.yarnpkg.com/marked/-/marked-18.0.7.tgz#6d8d4dd777730263e7e25bedad56a26bb2809232"
@@ -7996,6 +8026,11 @@ modern-tar@^0.7.6:
   resolved "https://registry.yarnpkg.com/modern-tar/-/modern-tar-0.7.6.tgz#a01edcd55b976a2b191d857456e8abb7208a8199"
   integrity sha512-sweCIVXzx1aIGTCdzcMlSZt1h8k5Tmk08VNAuRk3IU28XamGiOH5ypi11g6De2CH7PhYqSSnGy2A/EFhbWnVKg==
 
+modern-tar@^0.8.0:
+  version "0.8.4"
+  resolved "https://registry.yarnpkg.com/modern-tar/-/modern-tar-0.8.4.tgz#25d2de2f522250012f33a3b366400b49741f6b8e"
+  integrity sha512-gN54ddmyzEg10orwZ2u4OOv+bjpMWdIl5jIkodK97bMq8QBSL5c0D7YX0lT1Ooz+99S7+PvFbnxzdjgHo1r41g==
+
 ms@^2.0.0, ms@^2.1.1, ms@^2.1.3:
   version "2.1.3"
   resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
@@ -8017,13 +8052,13 @@ mulmocast-vision@^1.0.12:
     puppeteer "^25.3.0"
     yauzl "^3.4.0"
 
-mulmocast@^2.9.1:
-  version "2.9.2"
-  resolved "https://registry.yarnpkg.com/mulmocast/-/mulmocast-2.9.2.tgz#16731c0db5babe22bdb23037fffb1f5b7acd3d22"
-  integrity sha512-ymHUV+is09Q3gK5p0YuCt60c2Ch2J2dtHLZgDhHH6x3UmDwGoVgf3JQPJdt1kyhaWrqDD/afbYFEBeNAOykiJg==
+mulmocast@^2.12.0:
+  version "2.12.0"
+  resolved "https://registry.yarnpkg.com/mulmocast/-/mulmocast-2.12.0.tgz#1f01d1f3b1407377b188100a21d74906b1374c80"
+  integrity sha512-z9A0g206UJx2NpMokQMxm2YYB5pYG/vZWy7zmt0FlymF21h9DbX+wNXrObHTuAI5DRiZl+r6Hl3JM24UOh8/OA==
   dependencies:
     "@google-cloud/text-to-speech" "^6.4.1"
-    "@google/genai" "^2.13.0"
+    "@google/genai" "^2.17.1"
     "@graphai/anthropic_agent" "^2.0.12"
     "@graphai/browserless_agent" "^2.0.3"
     "@graphai/gemini_agent" "^2.0.5"
@@ -8036,9 +8071,9 @@ mulmocast@^2.9.1:
     "@inquirer/input" "^5.1.2"
     "@inquirer/select" "^5.2.1"
     "@modelcontextprotocol/sdk" "^1.29.0"
-    "@modernized/fluent-ffmpeg" "^1.0.2"
+    "@modernized/fluent-ffmpeg" "^1.0.3"
     "@mozilla/readability" "^0.6.0"
-    "@mulmocast/deck" "^1.1.0"
+    "@mulmocast/deck" "^2.0.0"
     "@tavily/core" "^0.7.6"
     archiver "^8.0.0"
     clipboardy "^5.3.2"
@@ -8046,13 +8081,13 @@ mulmocast@^2.9.1:
     graphai "^2.0.18"
     js-tiktoken "^1.0.21"
     jsdom "^29.1.1"
-    marked "^18.0.7"
+    marked "^18.0.10"
     mulmocast-vision "^1.0.12"
     ora "^9.4.1"
-    puppeteer "^25.3.0"
+    puppeteer "^25.8.0"
     replicate "^1.4.0"
     yaml "^2.9.0"
-    yargs "^18.0.0"
+    yargs "^18.1.0"
     zod "^4.4.3"
 
 mute-stream@^2.0.0:
@@ -8865,6 +8900,18 @@ puppeteer-core@25.4.0:
     webdriver-bidi-protocol "0.4.2"
     ws "^8.21.1"
 
+puppeteer-core@25.8.0:
+  version "25.8.0"
+  resolved "https://registry.yarnpkg.com/puppeteer-core/-/puppeteer-core-25.8.0.tgz#ca64b005aa21732ca8f5f3f98379739114ae09c5"
+  integrity sha512-LDOrawV8vfCVk+yLj2ozvajNP4Sv3OV9y3Tpiyy2g2Z+aQlbcozP6KJfI4iSBq7YQER+86ihEtPa5ioiZyWxMQ==
+  dependencies:
+    "@puppeteer/browsers" "3.2.1"
+    chromium-bidi "17.0.2"
+    devtools-protocol "0.0.1666840"
+    typed-query-selector "^2.12.2"
+    webdriver-bidi-protocol "0.4.2"
+    ws "^8.21.1"
+
 puppeteer@^25.3.0, puppeteer@^25.4.0:
   version "25.4.0"
   resolved "https://registry.yarnpkg.com/puppeteer/-/puppeteer-25.4.0.tgz#87b549a666ffc4f68fee2f195c42d67eba9b8168"
@@ -8875,6 +8922,18 @@ puppeteer@^25.3.0, puppeteer@^25.4.0:
     devtools-protocol "0.0.1653615"
     lilconfig "^3.1.3"
     puppeteer-core "25.4.0"
+    typed-query-selector "^2.12.2"
+
+puppeteer@^25.8.0:
+  version "25.8.0"
+  resolved "https://registry.yarnpkg.com/puppeteer/-/puppeteer-25.8.0.tgz#70e2bbae9b95439e870a0aa403e5c5d755f2a14f"
+  integrity sha512-3gcUJ+Jfodb5zNa/lWLZukBUwYiRIwAc8WRICoqfi+ZYmNWqpsPFyanTU3Gw/lhgII9aotVbAmhT6/NKHWgyUA==
+  dependencies:
+    "@puppeteer/browsers" "3.2.1"
+    chromium-bidi "17.0.2"
+    devtools-protocol "0.0.1666840"
+    lilconfig "^3.1.3"
+    puppeteer-core "25.8.0"
     typed-query-selector "^2.12.2"
 
 qs@^6.14.0, qs@^6.15.2:
@@ -9695,6 +9754,14 @@ string-width@^8.1.0:
   version "8.2.0"
   resolved "https://registry.yarnpkg.com/string-width/-/string-width-8.2.0.tgz#bdb6a9bd6d7800db635adae96cdb0443fec56c42"
   integrity sha512-6hJPQ8N0V0P3SNmP6h2J99RLuzrWz2gvT7VnK5tKvrNqJoyS9W4/Fb8mo31UiPvy00z7DQXkP2hnKBVav76thw==
+  dependencies:
+    get-east-asian-width "^1.5.0"
+    strip-ansi "^7.1.2"
+
+string-width@^8.2.1:
+  version "8.2.2"
+  resolved "https://registry.yarnpkg.com/string-width/-/string-width-8.2.2.tgz#7310516493df575742fe98af6fae87d85d5ed0ac"
+  integrity sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg==
   dependencies:
     get-east-asian-width "^1.5.0"
     strip-ansi "^7.1.2"
@@ -10799,6 +10866,18 @@ yargs@^17.7.2:
     string-width "^4.2.3"
     y18n "^5.0.5"
     yargs-parser "^21.1.1"
+
+yargs@^18.1.0:
+  version "18.1.0"
+  resolved "https://registry.yarnpkg.com/yargs/-/yargs-18.1.0.tgz#cd7e98c703ef51695bbbf062ed58f28e94291b56"
+  integrity sha512-2rAgRKu54VsHkqI0/tYkmluGXHD4KW7yZoycuqDQ15QOTnc2VVfy0nN/1eMhnQLO00A+dwtK20xuCnc1YGeUyg==
+  dependencies:
+    cliui "^9.0.1"
+    escalade "^3.1.1"
+    get-caller-file "^2.0.5"
+    string-width "^8.2.1"
+    y18n "^5.0.5"
+    yargs-parser "^22.0.0"
 
 yauzl@^3.4.0:
   version "3.4.0"
