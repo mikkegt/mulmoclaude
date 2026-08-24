@@ -94,3 +94,26 @@ describe("frontmatterTagIndex", () => {
     assert.deepEqual(index.get("plain"), []);
   });
 });
+
+// The second supported index shape: `- [[page name]]`. Its slug comes
+// from the parser rather than an href, which is where #2944 lived.
+describe("collectLintIssues — `- [[…]]` index form", () => {
+  let wikiLinkWorkspace: string;
+
+  before(async () => {
+    wikiLinkWorkspace = await mkdtemp(path.join(tmpdir(), "wiki-bullet-"));
+    const pages = path.join(wikiLinkWorkspace, "data", "wiki", "pages");
+    await mkdir(pages, { recursive: true });
+    await writeFile(path.join(pages, `${CJK_STEM}.md`), `# ${CJK_TITLE}\n`);
+    await writeFile(path.join(wikiLinkWorkspace, "data", "wiki", "index.md"), `# Wiki\n\n- [[${CJK_STEM}]] — 概要\n`);
+  });
+
+  after(async () => {
+    await rm(wikiLinkWorkspace, { recursive: true, force: true });
+  });
+
+  it("reports neither a missing file nor an orphan for a non-ASCII page", async () => {
+    __resetPageIndexCache();
+    assert.deepEqual(await collectLintIssues(wikiLinkWorkspace), []);
+  });
+});

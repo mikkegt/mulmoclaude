@@ -130,6 +130,36 @@ describe("parseIndexEntries — bullet formats", () => {
     assert.equal(entry.description, "first");
   });
 
+  it("keeps a non-ASCII `- [[…]]` target as the slug (#2944)", () => {
+    // The page file is named in Japanese, so the target IS the slug.
+    // Slugifying reduced it to `-4`, and the page was then reported as
+    // BOTH a missing index reference and an orphan file.
+    const entries = parseIndexEntries("- [[不耕起栽培-カバークロップ4年計画]] — 概要");
+    assert.equal(entries.length, 1);
+    const [entry] = entries;
+    assert.ok(entry);
+    assert.equal(entry.slug, "不耕起栽培-カバークロップ4年計画");
+    assert.equal(entry.title, "不耕起栽培-カバークロップ4年計画");
+  });
+
+  it("keeps slugifying an ASCII `- [[…]]` target", () => {
+    const entries = parseIndexEntries("- [[Sakura Internet]] — note");
+    assert.equal(entries[0]?.slug, "sakura-internet");
+  });
+
+  it("falls back to a non-ASCII TITLE when the href names no page", () => {
+    // An external URL yields no href slug; the title is all there is.
+    const entries = parseIndexEntries("- [不耕起栽培](https://example.com) — note");
+    assert.equal(entries[0]?.slug, "不耕起栽培");
+  });
+
+  it("still slugifies a name that could not be a filename", () => {
+    // `wikiPageStem` returns null here, so the old slug remains the
+    // best guess rather than an empty entry.
+    const entries = parseIndexEntries("- [[../secret]] — note");
+    assert.equal(entries[0]?.slug, "secret");
+  });
+
   it("prefers slug from href when title is non-ASCII", () => {
     // wikiSlugify strips non-ASCII to "", so without the href fall-
     // back the slug would be lost. The bullet parser keeps the slug
