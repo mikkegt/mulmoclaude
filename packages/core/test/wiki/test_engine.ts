@@ -1,17 +1,19 @@
-// Filesystem-level tests for `resolvePagePath` (#2940).
+// Filesystem-level tests for the wiki read engine (#2940).
 //
 // `pickFuzzyMatch` is covered in isolation by `test_resolveFuzzy.ts`;
 // this file pins the resolution ORDER against a real pages directory,
 // because the defect was structural: the page index is keyed by raw
 // filename stems while the lookup slugified the target first, so a
-// Japanese page could never match its own file.
+// Japanese page could never match its own file. `collectLintIssues`
+// sits here too — it is the only place that proves the engine hands
+// the lint the index-title map.
 
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { collectLintIssues, resolvePagePath } from "../../src/wiki/server/engine.ts";
+import { collectLintIssues, frontmatterTagIndex, resolvePagePath } from "../../src/wiki/server/engine.ts";
 import { __resetPageIndexCache } from "../../src/wiki/server/pageIndex.ts";
 
 const CJK_STEM = "不耕起栽培-カバークロップ4年計画";
@@ -77,5 +79,18 @@ describe("collectLintIssues", () => {
       issues.filter((issue) => issue.includes("Broken link")),
       [],
     );
+  });
+});
+
+describe("frontmatterTagIndex", () => {
+  it("keys by the lowercased filename stem so findTagDrift's lookup matches", () => {
+    const index = frontmatterTagIndex([
+      { fileName: "MyPage.md", content: "---\ntags: [alpha, Beta]\n---\n# MyPage\n" },
+      { fileName: "不耕起栽培.md", content: "---\ntags: [農業]\n---\n" },
+      { fileName: "plain.MD", content: "no frontmatter" },
+    ]);
+    assert.deepEqual([...index.keys()], ["mypage", "不耕起栽培", "plain"]);
+    assert.deepEqual(index.get("mypage"), ["alpha", "beta"]);
+    assert.deepEqual(index.get("plain"), []);
   });
 });

@@ -134,7 +134,7 @@ export async function loadWikiGraph(workspace: string): Promise<WikiGraph> {
   return buildWikiGraph(pages, indexEntries);
 }
 
-interface PageBody {
+export interface PageBody {
   fileName: string;
   content: string;
 }
@@ -146,7 +146,7 @@ async function readPageBodies(pagesDir: string, fileNames: readonly string[]): P
 /** Frontmatter `tags:` per page, keyed for `findTagDrift`. Lowercased so
  *  a `MyPage.md` filename matches an `entry.slug` of `mypage`, which is
  *  what the drift rule looks up. */
-function frontmatterTagIndex(bodies: readonly PageBody[]): Map<string, string[]> {
+export function frontmatterTagIndex(bodies: readonly PageBody[]): Map<string, string[]> {
   const tagsBySlug = new Map<string, string[]>();
   bodies.forEach(({ fileName, content }) => {
     tagsBySlug.set(fileName.replace(/\.md$/i, "").toLowerCase(), parseFrontmatterTags(content));
