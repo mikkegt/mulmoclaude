@@ -8,7 +8,7 @@
 // the `[[link]]` → HTML renderer.
 
 export { WIKI_LINK_PATTERN, parseWikiLink, type WikiLink } from "./link.js";
-export { isSafeSlug, wikiSlugify } from "./slug.js";
+export { isSafeSlug, wikiPageStem, wikiSlugify } from "./slug.js";
 export {
   type WikiPageEntry,
   BULLET_LINK_PATTERN,

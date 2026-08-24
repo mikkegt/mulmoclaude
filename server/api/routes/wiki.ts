@@ -18,7 +18,7 @@ import { errorMessage as formatError } from "../../utils/errors.js";
 // `@mulmoclaude/core/wiki/server`, shared with MulmoTerminal. This
 // route is the thin HTTP shell that shapes their output into the
 // canvas response envelope.
-import { wikiSlugify, formatLintReport, type WikiPageEntry, type WikiGraph } from "@mulmoclaude/core/wiki";
+import { wikiPageStem, formatLintReport, type WikiPageEntry, type WikiGraph } from "@mulmoclaude/core/wiki";
 import { resolvePagePath, readWikiIndex, readWikiPage, readWikiLog, loadWikiGraph, collectLintIssues } from "@mulmoclaude/core/wiki/server";
 
 const router = Router();
@@ -125,7 +125,7 @@ export function buildPageResponseData(args: { action: string; pageName: string; 
   // instructions now distinguish missing vs empty so the client and
   // the agent get consistent signals.
   const missing = !exists;
-  const slug = wikiSlugify(pageName);
+  const slug = wikiPageStem(pageName);
   const errorMessage = missing ? `Page not found: ${pageName}` : hasContent ? undefined : `Page is empty: ${pageName}`;
   const statusMessage = hasContent ? `Showing page: ${resolvedTitle}` : missing ? `Page not found: ${pageName}` : `Page exists but is empty: ${resolvedTitle}`;
   const statusInstructions = hasContent

@@ -10,7 +10,8 @@
 
 import type { WikiPageEntry } from "./index-parse.js";
 import { WIKI_LINK_PATTERN, parseWikiLink } from "./link.js";
-import { wikiSlugify } from "./slug.js";
+import { matchWikiSlug } from "./resolve.js";
+import { wikiPageStem } from "./slug.js";
 
 /** Files on disk that aren't referenced by index.md. */
 export function findOrphanPages(fileSlugs: ReadonlySet<string>, indexedSlugs: ReadonlySet<string>): string[] {
@@ -38,7 +39,7 @@ export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlug
  *  resolved slug doesn't exist in the file set.
  *
  *  Critically: this routes through `parseWikiLink` so
- *  `[[slug|display]]` is split correctly — the lint slugifies the
+ *  `[[slug|display]]` is split correctly — the lint resolves the
  *  TARGET, not the full bracket body. Pre-#1297 the lint
  *  slugified the entire content (`slug|display`), which collapsed
  *  to a slug that always missed and produced ~168 false-positive
@@ -48,18 +49,17 @@ export function findBrokenLinksInPage(fileName: string, content: string, fileSlu
   const matches = [...content.matchAll(WIKI_LINK_PATTERN)];
   for (const [, body = ""] of matches) {
     const { target } = parseWikiLink(body);
-    const linkSlug = wikiSlugify(target);
-    // Empty target is its own diagnostic — `[[|display]]` or
-    // `[[]]` slugifies to "" and would otherwise be flagged
+    // Empty target is its own diagnostic — `[[|display]]` or `[[]]`
+    // has nothing to resolve and would otherwise be flagged
     // identically to a real broken link. Keep the original raw
     // bracket body in the report so the user can grep their pages
     // for the malformed link.
-    if (linkSlug.length === 0) {
+    if (target.trim().length === 0) {
       issues.push(`- **Broken link** in \`${fileName}\`: [[${body}]] → empty target`);
       continue;
     }
-    if (!fileSlugs.has(linkSlug)) {
-      issues.push(`- **Broken link** in \`${fileName}\`: [[${body}]] → \`${linkSlug}.md\` not found`);
+    if (matchWikiSlug(target, fileSlugs) === null) {
+      issues.push(`- **Broken link** in \`${fileName}\`: [[${body}]] → \`${wikiPageStem(target)}.md\` not found`);
     }
   }
   return issues;

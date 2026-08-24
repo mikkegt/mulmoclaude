@@ -11,6 +11,7 @@
 import path from "node:path";
 import { parseWikiLink } from "../link.js";
 import { wikiSlugify } from "../slug.js";
+import { matchWikiSlug } from "../resolve.js";
 import { type WikiPageEntry, parseIndexEntries } from "../index-parse.js";
 import { findBrokenLinksInPage, findMissingFiles, findOrphanPages, findTagDrift } from "../lint.js";
 import { type WikiGraph, buildWikiGraph } from "../graph.js";
@@ -55,32 +56,34 @@ export function pickFuzzyMatch(slug: string, slugs: ReadonlyMap<string, string>)
   return bestIsTied ? null : bestFile;
 }
 
-/** Resolve a page name to an absolute `.md` path: exact slug → fuzzy →
- *  index-title fallback (for non-ASCII names that slugify to empty).
- *  `pageName` may carry the `[[target|display]]` form; `parseWikiLink`
- *  strips the display half so the lookup uses just the target. */
+/** File matching an index.md entry whose title equals `target` — the
+ *  last resort for a link written as the display title rather than
+ *  the page's own name. */
+function fileByIndexTitle(indexFile: string, target: string, slugs: ReadonlyMap<string, string>): string | undefined {
+  const entries = parseIndexEntries(readFileOrEmpty(indexFile));
+  const titleMatch = entries.find((entry) => entry.title === target);
+  return titleMatch ? slugs.get(titleMatch.slug) : undefined;
+}
+
+/** Resolve a page name to an absolute `.md` path: known slug (literal
+ *  or slugified) → fuzzy → index-title fallback. `pageName` may carry
+ *  the `[[target|display]]` form; `parseWikiLink` strips the display
+ *  half so the lookup uses just the target. */
 export async function resolvePagePath(workspace: string, pageName: string): Promise<string | null> {
   const { pagesDir, indexFile } = wikiDirs(workspace);
   const { slugs } = await getPageIndex(pagesDir);
   if (slugs.size === 0) return null;
 
   const { target } = parseWikiLink(pageName);
-  const slug = wikiSlugify(target);
+  const matched = matchWikiSlug(target, slugs);
+  const matchedFile = matched === null ? undefined : slugs.get(matched);
+  if (matchedFile) return path.join(pagesDir, matchedFile);
 
-  if (slug.length > 0) {
-    const exact = slugs.get(slug);
-    if (exact) return path.join(pagesDir, exact);
-    const fuzzy = pickFuzzyMatch(slug, slugs);
-    if (fuzzy) return path.join(pagesDir, fuzzy);
-  }
+  const fuzzy = pickFuzzyMatch(wikiSlugify(target), slugs);
+  if (fuzzy) return path.join(pagesDir, fuzzy);
 
-  const entries = parseIndexEntries(readFileOrEmpty(indexFile));
-  const titleMatch = entries.find((entry) => entry.title === target);
-  if (titleMatch) {
-    const file = slugs.get(titleMatch.slug);
-    if (file) return path.join(pagesDir, file);
-  }
-  return null;
+  const titleFile = fileByIndexTitle(indexFile, target, slugs);
+  return titleFile ? path.join(pagesDir, titleFile) : null;
 }
 
 /** Raw `index.md` content + its parsed entries. */

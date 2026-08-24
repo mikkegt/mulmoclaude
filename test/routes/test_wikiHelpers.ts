@@ -600,6 +600,19 @@ describe("buildPageResponseData", () => {
     });
     assert.match(response.instructions, /wiki\/pages\/video-generation\.md/);
   });
+
+  it("keeps a non-ASCII pageName intact in the filesystem hint (#2940)", () => {
+    // Slugifying stripped every non-ASCII character, so the agent was
+    // told to create `wiki/pages/-4.md` — a file no link resolves to.
+    const response = buildPageResponseData({
+      action: "page",
+      pageName: "不耕起栽培-カバークロップ4年計画",
+      resolvedTitle: "不耕起栽培-カバークロップ4年計画",
+      content: "",
+      exists: false,
+    });
+    assert.match(response.instructions, /wiki\/pages\/不耕起栽培-カバークロップ4年計画\.md/);
+  });
 });
 
 // Pin the wrapper layer that sits between resolvePagePath (I/O) and

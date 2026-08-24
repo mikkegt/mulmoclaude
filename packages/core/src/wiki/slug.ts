@@ -43,12 +43,32 @@ export function isSafeSlug(slug: string): boolean {
  *  Pure: no normalisation, no transliteration — this is the
  *  same shape the index parser, page resolver, and frontend
  *  renderer all need to agree on. Non-ASCII titles (e.g.
- *  Japanese) collapse to an empty string here; callers fall back
- *  to other strategies (title-match in the index, or the agent
- *  pre-resolving to a slug-form target via `[[slug|display]]`). */
+ *  Japanese) collapse to an ASCII remnant here, so a caller
+ *  matching against real page files must go through
+ *  `matchWikiSlug`, which tries the untouched name first. */
 export function wikiSlugify(text: string): string {
   return text
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+// Code point above which `wikiSlugify` strips a character outright.
+const MAX_ASCII_CODE_POINT = 127;
+
+function hasNonAscii(text: string): boolean {
+  return [...text].some((char) => (char.codePointAt(0) ?? 0) > MAX_ASCII_CODE_POINT);
+}
+
+/** Filename stem to suggest when a page has to be created for `name`.
+ *
+ *  ASCII names keep the hyphenated slug convention. A non-ASCII name is
+ *  suggested verbatim — the write chokepoint accepts any `isSafeSlug`
+ *  filename, and slugifying it would propose a stripped remnant like
+ *  `-4.md` (#2940). Names that are unsafe as a filename fall back to
+ *  the slug, which cannot contain a separator. */
+export function wikiPageStem(name: string): string {
+  const trimmed = name.trim();
+  if (!isSafeSlug(trimmed) || !hasNonAscii(trimmed)) return wikiSlugify(trimmed);
+  return trimmed;
 }

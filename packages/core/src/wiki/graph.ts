@@ -13,7 +13,7 @@
 // — do not conflate.
 
 import { WIKI_LINK_PATTERN, parseWikiLink } from "./link.js";
-import { wikiSlugify } from "./slug.js";
+import { matchWikiSlug } from "./resolve.js";
 import type { WikiPageEntry } from "./index-parse.js";
 
 export interface WikiGraphNode {
@@ -38,12 +38,13 @@ export interface WikiPageContent {
 }
 
 /** Resolve a raw `[[link]]` target to an existing page slug, or null.
- *  Mirrors the route resolver's strategy: slugify first, then fall
- *  back to matching an index entry title so non-ASCII targets like
- *  `[[さくらインターネット]]` resolve to their ASCII file slug. */
+ *  Mirrors the route resolver's strategy: match the known slugs first,
+ *  then fall back to an index entry title so a link written as the
+ *  display title (`[[さくらインターネット]]` → `sakura-internet.md`)
+ *  still finds its file. */
 export function resolveLinkTarget(target: string, fileSlugs: ReadonlySet<string>, slugByTitle: ReadonlyMap<string, string>): string | null {
-  const slug = wikiSlugify(target);
-  if (slug.length > 0 && fileSlugs.has(slug)) return slug;
+  const matched = matchWikiSlug(target, fileSlugs);
+  if (matched !== null) return matched;
   const byTitle = slugByTitle.get(target.trim());
   if (byTitle !== undefined && fileSlugs.has(byTitle)) return byTitle;
   return null;
