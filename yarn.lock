@@ -2066,10 +2066,10 @@
   resolved "https://registry.yarnpkg.com/@mozilla/readability/-/readability-0.6.0.tgz#134e3ce3ff1676716e550de0b8de957bcc59208b"
   integrity sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ==
 
-"@mulmocast/deck-web@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@mulmocast/deck-web/-/deck-web-2.0.0.tgz#d5de0a69d15bbafcf0f4ac5cb268e6725a6c4cb8"
-  integrity sha512-d7eLR2IK5r75oS/naZddVENwQjR2B7rzlIYdGWfU0617W4RVxd7f2g2pL1X2NIWnNn36T7CwdgXncOPBI4rC0g==
+"@mulmocast/beat-editor@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@mulmocast/beat-editor/-/beat-editor-1.1.0.tgz#7a2a894848bd7ab553866d690ce58a261b756a03"
+  integrity sha512-xHFhURQfXb9Os0q/bXaeW2sNVJni8mnaVwdRUBnLCiCiDrurRNA0Ud1fkfhF75j3xdL60m64VO8iiBRXyGEFSA==
   dependencies:
     dompurify "^3.4.14"
 
@@ -2097,6 +2097,13 @@
   version "0.4.1"
   resolved "https://registry.yarnpkg.com/@mulmochat-plugin/ui-image/-/ui-image-0.4.1.tgz#8fd3b1c4ffe21e6bc22761ff48eac03306e0d345"
   integrity sha512-I3AqTIuQPsSMNxDON9UTxT2KO57HV6uUVotCIFskV0UqBMQrQ3FUu8J+qXRWDdjPyYaHoC8AJsi91TbNrOMwng==
+
+"@mulmoclaude/mulmoscript-plugin@^3.1.0":
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/@mulmoclaude/mulmoscript-plugin/-/mulmoscript-plugin-3.1.0.tgz#5bb177a486a5d8b8f4fe94818fd89a4bd6d9f463"
+  integrity sha512-NQWU9qYh7AVdKMbEeGiVhrjQAEh/J9WMmmvmVlfg4FN4E6nyPIb87GCXsyoFBhoyzrjbceCDqk/RQ1DpcRHpbQ==
+  dependencies:
+    "@mulmoclaude/common" "^1.2.0"
 
 "@napi-rs/wasm-runtime@^1.1.4", "@napi-rs/wasm-runtime@^1.1.6", "@napi-rs/wasm-runtime@^1.2.0":
   version "1.2.2"

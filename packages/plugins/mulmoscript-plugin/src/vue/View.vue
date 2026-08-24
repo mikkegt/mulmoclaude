@@ -78,12 +78,18 @@
       @render-character="renderCharacter"
     />
 
-    <!-- Deck editor (#1575): every beat is a slide → mount the
-         interactive deck editor from @mulmocast/deck-web. The Vue
-         component is lazy-loaded via defineAsyncComponent, so users
-         whose scripts aren't decks never pay the bundle cost. -->
+    <!-- Deck editor (#1575, #2945): every beat is a slide → mount the interactive
+         editor from @mulmocast/beat-editor. Lazy-loaded via defineAsyncComponent, so
+         users whose scripts aren't decks never pay the bundle cost.
+
+         It takes and emits a beat ARRAY, so the script goes through beatsOf / withBeats
+         on the way in and out. Writing `{ ...script, beats }` by hand instead drops
+         presentationStyle and slideParams, and nothing tells you it happened.
+
+         No `layout` prop: the editor lays itself out from its own width, so the pane
+         moves below the list on a narrow host (this card) rather than beside it. -->
     <div v-if="isDeck" class="flex-1 overflow-hidden" data-testid="mulmo-script-deck-editor">
-      <MulmoScriptDeckEditor :script="deckScriptInput" layout="compact" @update:script="onDeckUpdate" />
+      <BeatListEditor :beats="deckBeats" @update:beats="onDeckBeatsUpdate" />
     </div>
 
     <!-- Beat list (fallback when the script has any non-slide beat) -->
@@ -359,6 +365,7 @@ import {
   clearReactiveRecords,
   type Beat,
 } from "./helpers";
+import { beatsOf, withBeats, type EditableBeat } from "@mulmocast/beat-editor";
 import { errorMessage } from "@mulmoclaude/common";
 import { readFileAsDataUrl, useClipboardCopy } from "./support";
 import { useMulmoScriptTransport } from "./transport";
@@ -373,11 +380,11 @@ import CharacterStrip from "./components/CharacterStrip.vue";
 import MulmoScriptToolbar from "./components/MulmoScriptToolbar.vue";
 import { useT } from "../lang/index";
 
-// Lazy-loaded so the deck editor's Vue / tailwind / SlidePreview chunk
-// stays out of the initial bundle for users whose scripts aren't decks
+// Lazy-loaded so the editor's Vue / tailwind chunk stays out of the initial
+// bundle for users whose scripts aren't decks
 // (movies, html_tailwind animations, mixed beats). `defineAsyncComponent`
 // triggers the dynamic import only when `isDeck` first flips true.
-const MulmoScriptDeckEditor = defineAsyncComponent(() => import("@mulmocast/deck-web").then((mod) => mod.MulmoScriptDeckEditor));
+const BeatListEditor = defineAsyncComponent(() => import("@mulmocast/beat-editor").then((mod) => mod.BeatListEditor));
 
 const api = useMulmoScriptTransport();
 const adapter = useHostAdapter();
@@ -693,10 +700,20 @@ function commitScript(next: MulmoScript): void {
 }
 
 // #1575 — when every beat is a `slide`, swap the per-beat list UI for the
-// interactive deck editor (@mulmocast/deck-web). Mixed scripts (any non-slide
+// interactive deck editor (@mulmocast/beat-editor). Mixed scripts (any non-slide
 // beat) fall back to the existing list. The debounce + flush-on-unmount live
 // in the composable.
 const { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+
+// The editor takes and emits a beat array; the composable, the transport and the
+// toolResult all speak whole scripts. `beatsOf` / `withBeats` are the conversion, and
+// `withBeats` is what keeps presentationStyle / slideParams from being dropped on the
+// way back — `{ ...script, beats }` loses them silently.
+const deckBeats = computed<EditableBeat[]>(() => beatsOf(deckScriptInput.value));
+
+function onDeckBeatsUpdate(beats: EditableBeat[]): void {
+  onDeckUpdate(withBeats(deckScriptInput.value, beats));
+}
 
 onBeforeUnmount(() => {
   flushPendingDeckSave();
