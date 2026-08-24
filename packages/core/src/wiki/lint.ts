@@ -51,7 +51,11 @@ function brokenLinkIssue(fileName: string, body: string, fileSlugs: ReadonlySet<
   // so the user can grep their pages for the malformed link.
   if (target.trim().length === 0) return `- **Broken link** in \`${fileName}\`: [[${body}]] → empty target`;
   if (matchWikiSlug(target, fileSlugs) !== null) return null;
-  const stem = wikiPageStem(target) ?? target.trim();
+  const stem = wikiPageStem(target);
+  // A target the write guard would reject has no file to suggest —
+  // saying `../secrets.md not found` invites creating what cannot
+  // exist (CodeRabbit review).
+  if (stem === null) return `- **Broken link** in \`${fileName}\`: [[${body}]] → \`${target.trim()}\` cannot be a page filename`;
   return `- **Broken link** in \`${fileName}\`: [[${body}]] → \`${stem}.md\` not found`;
 }
 

@@ -615,6 +615,19 @@ describe("buildPageResponseData", () => {
     assert.match(response.instructions, /wiki\/pages\/foo-bar\.md/);
   });
 
+  it("suggests the TARGET half of an aliased request, not the whole body", () => {
+    // The resolver accepts `[[target|display]]`, so the hint has to
+    // name `target.md` — `target|display.md` resolves to nothing.
+    const response = buildPageResponseData({
+      action: "page",
+      pageName: "不耕起栽培-カバークロップ4年計画|4年計画",
+      resolvedTitle: "不耕起栽培-カバークロップ4年計画|4年計画",
+      content: "",
+      exists: false,
+    });
+    assert.match(response.instructions, /wiki\/pages\/不耕起栽培-カバークロップ4年計画\.md/);
+  });
+
   it("says the name is unusable rather than naming an empty file", () => {
     // `wikiPageStem` returns null here; the old text rendered
     // `wiki/pages/.md`, a file the write guard rejects (Codex review).

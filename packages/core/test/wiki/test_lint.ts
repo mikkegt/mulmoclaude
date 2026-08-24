@@ -59,6 +59,18 @@ describe("findBrokenLinksInPage — [[slug|alias]] regression", () => {
     assert.deepEqual(findBrokenLinksInPage("a.md", content, fileSlugs), []);
   });
 
+  it("says a target that cannot be a filename is unusable, not merely missing", () => {
+    // `../secrets` is rejected by the write guard, so `../secrets.md
+    // not found` would invite creating a file that cannot exist.
+    const content = "see [[../secrets]] for context";
+    const issues = findBrokenLinksInPage("a.md", content, new Set<string>());
+    assert.equal(issues.length, 1);
+    const [issue] = issues;
+    assert.ok(issue);
+    assert.match(issue, /cannot be a page filename/);
+    assert.doesNotMatch(issue, /\.md` not found/);
+  });
+
   it("reports a missing non-ASCII target as a broken link, not an empty target", () => {
     const content = "see [[キース・ラボイス]] for context";
     const fileSlugs = new Set<string>();
