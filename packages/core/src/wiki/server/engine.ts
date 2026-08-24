@@ -134,6 +134,26 @@ export async function loadWikiGraph(workspace: string): Promise<WikiGraph> {
   return buildWikiGraph(pages, indexEntries);
 }
 
+interface PageBody {
+  fileName: string;
+  content: string;
+}
+
+async function readPageBodies(pagesDir: string, fileNames: readonly string[]): Promise<PageBody[]> {
+  return Promise.all(fileNames.map(async (fileName) => ({ fileName, content: await readPageBody(pagesDir, fileName) })));
+}
+
+/** Frontmatter `tags:` per page, keyed for `findTagDrift`. Lowercased so
+ *  a `MyPage.md` filename matches an `entry.slug` of `mypage`, which is
+ *  what the drift rule looks up. */
+function frontmatterTagIndex(bodies: readonly PageBody[]): Map<string, string[]> {
+  const tagsBySlug = new Map<string, string[]>();
+  bodies.forEach(({ fileName, content }) => {
+    tagsBySlug.set(fileName.replace(/\.md$/i, "").toLowerCase(), parseFrontmatterTags(content));
+  });
+  return tagsBySlug;
+}
+
 /** Run every lint rule over the on-disk wiki, returning issue strings. */
 export async function collectLintIssues(workspace: string): Promise<string[]> {
   const { pagesDir, indexFile } = wikiDirs(workspace);
@@ -142,21 +162,13 @@ export async function collectLintIssues(workspace: string): Promise<string[]> {
     return ["- Wiki `pages/` directory does not exist yet. Start ingesting sources."];
   }
   const pageEntries = parseIndexEntries(readFileOrEmpty(indexFile));
-  const indexedSlugs = new Set(pageEntries.map((entry) => entry.slug));
-  const slugByTitle = slugByIndexTitle(pageEntries);
   const fileSlugs = new Set(slugs.keys());
-  const bodies = await Promise.all([...slugs.values()].map(async (fileName) => ({ fileName, content: await readPageBody(pagesDir, fileName) })));
-
-  const issues: string[] = [];
-  issues.push(...findOrphanPages(fileSlugs, indexedSlugs));
-  issues.push(...findMissingFiles(pageEntries, fileSlugs));
-  const frontmatterTagsBySlug = new Map<string, string[]>();
-  for (const { fileName, content } of bodies) {
-    issues.push(...findBrokenLinksInPage(fileName, content, fileSlugs, slugByTitle));
-    // Lowercase the key so a `MyPage.md` filename matches an
-    // `entry.slug` of `mypage`; `findTagDrift` lowercases the lookup.
-    frontmatterTagsBySlug.set(fileName.replace(/\.md$/i, "").toLowerCase(), parseFrontmatterTags(content));
-  }
-  issues.push(...findTagDrift(pageEntries, frontmatterTagsBySlug));
-  return issues;
+  const slugByTitle = slugByIndexTitle(pageEntries);
+  const bodies = await readPageBodies(pagesDir, [...slugs.values()]);
+  return [
+    ...findOrphanPages(fileSlugs, new Set(pageEntries.map((entry) => entry.slug))),
+    ...findMissingFiles(pageEntries, fileSlugs),
+    ...bodies.flatMap(({ fileName, content }) => findBrokenLinksInPage(fileName, content, fileSlugs, slugByTitle)),
+    ...findTagDrift(pageEntries, frontmatterTagIndex(bodies)),
+  ];
 }
