@@ -30,6 +30,10 @@ before. The page resolver, the lint and the graph all call it, so they cannot
 disagree again, and a "page not found" now names the file the author actually
 meant.
 
+The lint also gained the index.md title fallback the resolver and the graph
+already had, so a link written as a page's display title is no longer reported
+broken while both of them follow it.
+
 The write path never had this problem: it validates with `isSafeSlug`, which
 accepts non-ASCII names, as does the router guard. Only reads were broken.
 

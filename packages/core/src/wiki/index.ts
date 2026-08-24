@@ -9,7 +9,7 @@
 
 export { WIKI_LINK_PATTERN, parseWikiLink, type WikiLink } from "./link.js";
 export { isSafeSlug, wikiPageStem, wikiSlugify } from "./slug.js";
-export { matchWikiSlug, type SlugLookup } from "./resolve.js";
+export { matchWikiSlug, resolveLinkTarget, slugByIndexTitle, type SlugLookup } from "./resolve.js";
 export {
   type WikiPageEntry,
   BULLET_LINK_PATTERN,
@@ -21,16 +21,7 @@ export {
   parseTagsCell,
 } from "./index-parse.js";
 export { findBrokenLinksInPage, findMissingFiles, findOrphanPages, findTagDrift, formatLintReport } from "./lint.js";
-export {
-  type WikiGraph,
-  type WikiGraphNode,
-  type WikiGraphEdge,
-  type WikiPageContent,
-  buildWikiGraph,
-  incomingLinks,
-  pageOutgoingSlugs,
-  resolveLinkTarget,
-} from "./graph.js";
+export { type WikiGraph, type WikiGraphNode, type WikiGraphEdge, type WikiPageContent, buildWikiGraph, incomingLinks, pageOutgoingSlugs } from "./graph.js";
 export {
   type WikiAction,
   type WikiRouteSection,

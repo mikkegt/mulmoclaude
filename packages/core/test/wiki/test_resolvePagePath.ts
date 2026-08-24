@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolvePagePath } from "../../src/wiki/server/engine.ts";
+import { collectLintIssues, resolvePagePath } from "../../src/wiki/server/engine.ts";
 import { __resetPageIndexCache } from "../../src/wiki/server/pageIndex.ts";
 
 const CJK_STEM = "不耕起栽培-カバークロップ4年計画";
@@ -24,7 +24,7 @@ before(async () => {
   workspace = await mkdtemp(path.join(tmpdir(), "wiki-resolve-"));
   pagesDir = path.join(workspace, "data", "wiki", "pages");
   await mkdir(pagesDir, { recursive: true });
-  await writeFile(path.join(pagesDir, `${CJK_STEM}.md`), `# ${CJK_TITLE}\n`);
+  await writeFile(path.join(pagesDir, `${CJK_STEM}.md`), `# ${CJK_TITLE}\n\n[[${CJK_STEM}]] と [[Sakura Internet]] と [[${CJK_TITLE}]]\n`);
   await writeFile(path.join(pagesDir, "sakura-internet.md"), "# Sakura\n");
   await writeFile(path.join(pagesDir, "MyPage.md"), "# MyPage\n");
   await writeFile(
@@ -64,5 +64,18 @@ describe("resolvePagePath", () => {
 
   it("returns null for a page that does not exist", async () => {
     assert.equal(await resolvePagePath(workspace, "存在しないページ"), null);
+  });
+});
+
+describe("collectLintIssues", () => {
+  // The body links the page three ways: its own stem, an ASCII display
+  // name, and the index.md display title — the last resolves only
+  // through the title map the engine hands the lint (Codex review).
+  it("calls none of a non-ASCII page's links broken", async () => {
+    const issues = await collectLintIssues(workspace);
+    assert.deepEqual(
+      issues.filter((issue) => issue.includes("Broken link")),
+      [],
+    );
   });
 });

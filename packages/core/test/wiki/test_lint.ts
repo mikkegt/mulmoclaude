@@ -59,6 +59,23 @@ describe("findBrokenLinksInPage — [[slug|alias]] regression", () => {
     assert.deepEqual(findBrokenLinksInPage("a.md", content, fileSlugs), []);
   });
 
+  it("resolves a link written as an index.md display title", () => {
+    // `resolvePagePath` and the graph both fall back to the index
+    // title; without the same fallback the lint called broken exactly
+    // the links they follow happily (Codex review).
+    const content = "見て [[さくらインターネット]]";
+    const fileSlugs = new Set(["sakura-internet"]);
+    const slugByTitle = new Map([["さくらインターネット", "sakura-internet"]]);
+    assert.deepEqual(findBrokenLinksInPage("a.md", content, fileSlugs, slugByTitle), []);
+  });
+
+  it("still flags a title that no index entry claims", () => {
+    const content = "見て [[知らないタイトル]]";
+    const fileSlugs = new Set(["sakura-internet"]);
+    const slugByTitle = new Map([["さくらインターネット", "sakura-internet"]]);
+    assert.equal(findBrokenLinksInPage("a.md", content, fileSlugs, slugByTitle).length, 1);
+  });
+
   it("says a target that cannot be a filename is unusable, not merely missing", () => {
     // `../secrets` is rejected by the write guard, so `../secrets.md
     // not found` would invite creating a file that cannot exist.

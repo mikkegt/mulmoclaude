@@ -4,6 +4,7 @@
 //
 // Pure string + lookup work; safe to import from browser bundles.
 
+import type { WikiPageEntry } from "./index-parse.js";
 import { wikiSlugify } from "./slug.js";
 
 /** Anything that can answer "do you hold this slug?" — the page index
@@ -27,4 +28,26 @@ export function matchWikiSlug(target: string, known: SlugLookup): string | null 
   const slug = wikiSlugify(literal);
   if (slug.length > 0 && known.has(slug)) return slug;
   return null;
+}
+
+/** index.md title → slug, first entry wins. The fallback for links
+ *  written as the display title rather than the page's own name. */
+export function slugByIndexTitle(entries: readonly WikiPageEntry[]): Map<string, string> {
+  const map = new Map<string, string>();
+  entries.forEach((entry) => {
+    if (entry.title.length > 0 && !map.has(entry.title)) map.set(entry.title, entry.slug);
+  });
+  return map;
+}
+
+/** Resolve a raw `[[link]]` target to an existing page slug, or null:
+ *  known slug first, then an index entry's title. Every consumer that
+ *  judges whether a link points at a real page — the graph and the
+ *  lint — shares this, so a link cannot be an edge in one and a broken
+ *  link in the other. */
+export function resolveLinkTarget(target: string, fileSlugs: SlugLookup, slugByTitle: ReadonlyMap<string, string>): string | null {
+  const matched = matchWikiSlug(target, fileSlugs);
+  if (matched !== null) return matched;
+  const byTitle = slugByTitle.get(target.trim());
+  return byTitle !== undefined && fileSlugs.has(byTitle) ? byTitle : null;
 }

@@ -11,7 +11,7 @@
 import path from "node:path";
 import { parseWikiLink } from "../link.js";
 import { wikiSlugify } from "../slug.js";
-import { matchWikiSlug } from "../resolve.js";
+import { matchWikiSlug, slugByIndexTitle } from "../resolve.js";
 import { type WikiPageEntry, parseIndexEntries } from "../index-parse.js";
 import { findBrokenLinksInPage, findMissingFiles, findOrphanPages, findTagDrift } from "../lint.js";
 import { type WikiGraph, buildWikiGraph } from "../graph.js";
@@ -143,6 +143,7 @@ export async function collectLintIssues(workspace: string): Promise<string[]> {
   }
   const pageEntries = parseIndexEntries(readFileOrEmpty(indexFile));
   const indexedSlugs = new Set(pageEntries.map((entry) => entry.slug));
+  const slugByTitle = slugByIndexTitle(pageEntries);
   const fileSlugs = new Set(slugs.keys());
   const bodies = await Promise.all([...slugs.values()].map(async (fileName) => ({ fileName, content: await readPageBody(pagesDir, fileName) })));
 
@@ -151,7 +152,7 @@ export async function collectLintIssues(workspace: string): Promise<string[]> {
   issues.push(...findMissingFiles(pageEntries, fileSlugs));
   const frontmatterTagsBySlug = new Map<string, string[]>();
   for (const { fileName, content } of bodies) {
-    issues.push(...findBrokenLinksInPage(fileName, content, fileSlugs));
+    issues.push(...findBrokenLinksInPage(fileName, content, fileSlugs, slugByTitle));
     // Lowercase the key so a `MyPage.md` filename matches an
     // `entry.slug` of `mypage`; `findTagDrift` lowercases the lookup.
     frontmatterTagsBySlug.set(fileName.replace(/\.md$/i, "").toLowerCase(), parseFrontmatterTags(content));
