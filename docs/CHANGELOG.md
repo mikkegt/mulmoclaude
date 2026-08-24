@@ -10,6 +10,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ### Fixed
 
+#### Wiki pages named in Japanese could not be opened, and every link to one was reported broken (#2940)
+
+A wiki page's slug IS its filename stem, so a page saved as
+`不耕起栽培-カバークロップ4年計画.md` is indexed under exactly that name. Every
+lookup, though, ran the target through `wikiSlugify` first — which strips all
+non-ASCII — and then searched for the remnant, `-4`. Nothing could match: opening
+the page returned `pageExists: false` and told the agent to create
+`wiki/pages/-4.md`, the lint flagged each `[[…]]` link to it as broken, and the
+graph dropped the edge. One reporter had 44 of 50 pages in this state; the six
+that worked were the ones whose index.md title happened to equal their filename,
+which is the only fallback that existed.
+
+Resolution now goes through one shared rule, `matchWikiSlug`: try the untouched
+name against the known page slugs first, then the slugified form. ASCII links are
+unaffected — `[[Sakura Internet]]` still finds `sakura-internet.md` — and a page
+file whose name carries capitals (`MyPage.md`) now resolves too, which it did not
+before. The page resolver, the lint and the graph all call it, so they cannot
+disagree again, and a "page not found" now names the file the author actually
+meant.
+
+The lint also gained the index.md title fallback the resolver and the graph
+already had, so a link written as a page's display title is no longer reported
+broken while both of them follow it.
+
+The write path never had this problem: it validates with `isSafeSlug`, which
+accepts non-ASCII names, as does the router guard. Only reads were broken.
+
 #### A phone view's page ends early instead of coming back with a hole in it (#2924)
 
 A mobile view's images are inlined host-side as `data:` thumbnails, inside a
