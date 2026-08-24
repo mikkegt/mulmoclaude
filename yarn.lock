@@ -2066,10 +2066,10 @@
   resolved "https://registry.yarnpkg.com/@mozilla/readability/-/readability-0.6.0.tgz#134e3ce3ff1676716e550de0b8de957bcc59208b"
   integrity sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ==
 
-"@mulmocast/beat-editor@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@mulmocast/beat-editor/-/beat-editor-1.1.0.tgz#7a2a894848bd7ab553866d690ce58a261b756a03"
-  integrity sha512-xHFhURQfXb9Os0q/bXaeW2sNVJni8mnaVwdRUBnLCiCiDrurRNA0Ud1fkfhF75j3xdL60m64VO8iiBRXyGEFSA==
+"@mulmocast/beat-editor@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@mulmocast/beat-editor/-/beat-editor-1.1.1.tgz#c849d796c6a6a7f8fef71aca95051947795fa2bb"
+  integrity sha512-soHUueTQIAUrVztgPVilvnUrClewAYeHExdL4ikeUzUiE5+wyO6qnKJ7DuLgj6u986aFCD/YxaunJ0gIK/2usw==
   dependencies:
     dompurify "^3.4.14"
 

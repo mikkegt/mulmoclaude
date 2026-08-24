@@ -45,7 +45,7 @@
     "@mulmoclaude/common": "^1.2.0"
   },
   "peerDependencies": {
-    "@mulmocast/beat-editor": "^1.1.0",
+    "@mulmocast/beat-editor": "^1.1.1",
     "@mulmocast/types": "^2.9.0",
     "@mulmoclaude/core": "^4.1.0",
     "graphai": "^2.0.18",
