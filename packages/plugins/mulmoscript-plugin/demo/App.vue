@@ -17,7 +17,12 @@ import { createRuntimeStub } from "./runtimeStub";
 import { sampleDeck } from "./sampleDeck";
 import RuntimeProvider from "./RuntimeProvider.vue";
 import ShadowFrame from "./ShadowFrame.vue";
-import pluginCss from "../src/style.css?inline";
+// The BUILT stylesheet, which is what the host injects into the shadow root — not the
+// source one. `src/style.css` is `@import "tailwindcss"` and carries no utilities until
+// Vite compiles it, so injecting that put the editor in a shadow root with no rules at all:
+// the container query never applied, the pane took 498px of 589px, and the slide preview
+// was clipped to 91px. Run `yarn build` before `yarn dev` when the styles change.
+import pluginCss from "../dist/style.css?inline";
 
 // The transport hands the WHOLE envelope back as `data` (`transport.ts` returns
 // `{ ok: true, data: result }`), so each kind's payload sits beside `ok` rather than under a

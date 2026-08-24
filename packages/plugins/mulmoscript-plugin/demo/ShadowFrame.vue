@@ -15,6 +15,24 @@
 import { createApp, onBeforeUnmount, onMounted, ref, type App, type Component } from "vue";
 import { PLUGIN_RUNTIME_KEY, type BrowserPluginRuntime } from "gui-chat-protocol/vue";
 
+/** Copied from the host's PluginFrame so the demo shows what a user actually sees. */
+const ICON_ALIAS_CSS = `
+.material-icons,
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}`;
+
 const props = defineProps<{ css: string; runtime: BrowserPluginRuntime; component: Component; componentProps: Record<string, unknown> }>();
 
 const host = ref<HTMLDivElement | null>(null);
@@ -24,6 +42,13 @@ onMounted(() => {
   const element = host.value;
   if (!element) return;
   const shadow = element.attachShadow({ mode: "open" });
+  // The host aliases the icon classes inside every plugin's shadow root
+  // (`PluginFrame.vue` → MATERIAL_ICONS_SHADOW_CSS); without it `content_copy` renders as
+  // the literal word. The @font-face itself is registered on the document by main.ts —
+  // a shadow root cannot register one.
+  const iconStyle = document.createElement("style");
+  iconStyle.textContent = ICON_ALIAS_CSS;
+  shadow.appendChild(iconStyle);
   const style = document.createElement("style");
   style.textContent = props.css;
   shadow.appendChild(style);
