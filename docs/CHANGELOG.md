@@ -25,6 +25,12 @@ untouched: `- [[Sakura Internet]]` still indexes `sakura-internet`, and a name n
 file could carry still falls back to the old slug rather than becoming an empty
 entry.
 
+An index entry written with no page name at all — `- [[|display text]]` — used to
+borrow the display half as its slug, so a typo could quietly name a real page and
+disappear from the report. It is now reported as a malformed entry instead, with
+a message that says what is wrong rather than the old "references `` but the file
+does not exist".
+
 One consequence worth knowing about: `findTagDrift` looks its pages up by
 `entry.slug`, so for these pages it has been silently skipping the check
 entirely. It now runs, and a wiki with genuine frontmatter/index tag differences

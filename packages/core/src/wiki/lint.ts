@@ -28,7 +28,9 @@ export function findOrphanPages(fileSlugs: ReadonlySet<string>, indexedSlugs: Re
 export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlugs: ReadonlySet<string>): string[] {
   const issues: string[] = [];
   for (const entry of pageEntries) {
-    if (!fileSlugs.has(entry.slug)) {
+    if (entry.slug.length === 0) {
+      issues.push(`- **Malformed entry**: index.md lists \`${entry.title}\` with no page name`);
+    } else if (!fileSlugs.has(entry.slug)) {
       issues.push(`- **Missing file**: index.md references \`${entry.slug}\` but the file does not exist`);
     }
   }

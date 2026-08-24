@@ -117,3 +117,30 @@ describe("collectLintIssues — `- [[…]]` index form", () => {
     assert.deepEqual(await collectLintIssues(wikiLinkWorkspace), []);
   });
 });
+
+// A malformed `- [[|display]]` entry must stay visible even when the
+// display half names a real page — the case Codex raised on #2946.
+describe("collectLintIssues — empty index target", () => {
+  let aliasWorkspace: string;
+
+  before(async () => {
+    aliasWorkspace = await mkdtemp(path.join(tmpdir(), "wiki-alias-"));
+    const pages = path.join(aliasWorkspace, "data", "wiki", "pages");
+    await mkdir(pages, { recursive: true });
+    await writeFile(path.join(pages, "日本語.md"), "# 日本語\n");
+    await writeFile(path.join(aliasWorkspace, "data", "wiki", "index.md"), "# Wiki\n\n- [[|日本語]] — note\n");
+  });
+
+  after(async () => {
+    await rm(aliasWorkspace, { recursive: true, force: true });
+  });
+
+  it("reports the malformed entry even though the display half names a real page", async () => {
+    __resetPageIndexCache();
+    const issues = await collectLintIssues(aliasWorkspace);
+    assert.equal(issues.filter((issue) => issue.includes("Malformed entry")).length, 1);
+    // The page file is not claimed by any valid entry, so it is also an
+    // orphan — both halves of the truth, neither silently swallowed.
+    assert.equal(issues.filter((issue) => issue.includes("Orphan page")).length, 1);
+  });
+});

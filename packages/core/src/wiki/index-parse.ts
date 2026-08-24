@@ -176,7 +176,11 @@ function parseBulletWikiLinkRow(trimmed: string): WikiPageEntry | null {
   // produces a wrong slug — Codex review on PR #1312.
   const { target, display } = parseWikiLink(match[1] ?? "");
   const title = (display || target).trim();
-  const slug = entrySlugFor(target || title);
+  // No title fallback: an explicitly empty target (`- [[|display]]`) is
+  // malformed, and borrowing the display half would let it name a real
+  // page — silently accepting the typo instead of reporting it. An
+  // empty slug reaches `findMissingFiles`, which says so (#2944).
+  const slug = entrySlugFor(target);
   const raw = match[2]?.trim() ?? "";
   const { description, tags } = extractHashTags(raw);
   return { title, slug, description, tags };

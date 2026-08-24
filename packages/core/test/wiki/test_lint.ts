@@ -117,6 +117,19 @@ describe("findOrphanPages / findMissingFiles", () => {
   });
 });
 
+describe("findMissingFiles — malformed entries", () => {
+  it("names an entry with no page name as malformed, not as a missing file", () => {
+    // `- [[|日本語]]` parses to an empty slug; "references `` but the
+    // file does not exist" is unactionable (Codex review on #2946).
+    const entries: WikiPageEntry[] = [{ slug: "", title: "日本語", description: "", tags: [] }];
+    const issues = findMissingFiles(entries, new Set(["sakura-internet"]));
+    assert.equal(issues.length, 1);
+    const [issue] = issues;
+    assert.ok(issue);
+    assert.match(issue, /Malformed entry.*日本語.*no page name/);
+  });
+});
+
 describe("findTagDrift", () => {
   it("flags slugs whose index tags disagree with frontmatter tags", () => {
     const entries: WikiPageEntry[] = [

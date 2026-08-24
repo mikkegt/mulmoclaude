@@ -142,6 +142,14 @@ describe("parseIndexEntries — bullet formats", () => {
     assert.equal(entry.title, "不耕起栽培-カバークロップ4年計画");
   });
 
+  it("leaves an empty `- [[|display]]` target unresolved, whatever the script", () => {
+    // Borrowing the display half would let a malformed entry name a
+    // real page and vanish from the lint (Codex review on #2946).
+    assert.equal(parseIndexEntries("- [[|日本語]] — note")[0]?.slug, "");
+    assert.equal(parseIndexEntries("- [[|Sakura Internet]] — note")[0]?.slug, "");
+    assert.equal(parseIndexEntries("- [[|日本語]] — note")[0]?.title, "日本語", "the display half still titles the entry");
+  });
+
   it("keeps slugifying an ASCII `- [[…]]` target", () => {
     const entries = parseIndexEntries("- [[Sakura Internet]] — note");
     assert.equal(entries[0]?.slug, "sakura-internet");
