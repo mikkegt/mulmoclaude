@@ -9,6 +9,7 @@
 
 export { WIKI_LINK_PATTERN, parseWikiLink, type WikiLink } from "./link.js";
 export { isSafeSlug, wikiPageStem, wikiSlugify } from "./slug.js";
+export { matchWikiSlug, type SlugLookup } from "./resolve.js";
 export {
   type WikiPageEntry,
   BULLET_LINK_PATTERN,

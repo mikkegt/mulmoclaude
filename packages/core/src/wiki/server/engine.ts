@@ -61,7 +61,8 @@ export function pickFuzzyMatch(slug: string, slugs: ReadonlyMap<string, string>)
  *  the page's own name. */
 function fileByIndexTitle(indexFile: string, target: string, slugs: ReadonlyMap<string, string>): string | undefined {
   const entries = parseIndexEntries(readFileOrEmpty(indexFile));
-  const titleMatch = entries.find((entry) => entry.title === target);
+  const trimmed = target.trim();
+  const titleMatch = entries.find((entry) => entry.title === trimmed);
   return titleMatch ? slugs.get(titleMatch.slug) : undefined;
 }
 

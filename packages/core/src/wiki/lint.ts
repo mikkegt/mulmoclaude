@@ -35,8 +35,7 @@ export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlug
   return issues;
 }
 
-/** Walk a page's body for `[[…]]` links and flag any whose
- *  resolved slug doesn't exist in the file set.
+/** One `[[…]]` body's diagnostic, or null when the link resolves.
  *
  *  Critically: this routes through `parseWikiLink` so
  *  `[[slug|display]]` is split correctly — the lint resolves the
@@ -44,25 +43,24 @@ export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlug
  *  slugified the entire content (`slug|display`), which collapsed
  *  to a slug that always missed and produced ~168 false-positive
  *  "broken link" warnings. */
+function brokenLinkIssue(fileName: string, body: string, fileSlugs: ReadonlySet<string>): string | null {
+  const { target } = parseWikiLink(body);
+  // Empty target is its own diagnostic — `[[|display]]` or `[[]]` has
+  // nothing to resolve and would otherwise be flagged identically to a
+  // real broken link. Keep the original raw bracket body in the report
+  // so the user can grep their pages for the malformed link.
+  if (target.trim().length === 0) return `- **Broken link** in \`${fileName}\`: [[${body}]] → empty target`;
+  if (matchWikiSlug(target, fileSlugs) !== null) return null;
+  const stem = wikiPageStem(target) ?? target.trim();
+  return `- **Broken link** in \`${fileName}\`: [[${body}]] → \`${stem}.md\` not found`;
+}
+
+/** Walk a page's body for `[[…]]` links and flag any whose target
+ *  doesn't resolve to a file in the set. */
 export function findBrokenLinksInPage(fileName: string, content: string, fileSlugs: ReadonlySet<string>): string[] {
-  const issues: string[] = [];
-  const matches = [...content.matchAll(WIKI_LINK_PATTERN)];
-  for (const [, body = ""] of matches) {
-    const { target } = parseWikiLink(body);
-    // Empty target is its own diagnostic — `[[|display]]` or `[[]]`
-    // has nothing to resolve and would otherwise be flagged
-    // identically to a real broken link. Keep the original raw
-    // bracket body in the report so the user can grep their pages
-    // for the malformed link.
-    if (target.trim().length === 0) {
-      issues.push(`- **Broken link** in \`${fileName}\`: [[${body}]] → empty target`);
-      continue;
-    }
-    if (matchWikiSlug(target, fileSlugs) === null) {
-      issues.push(`- **Broken link** in \`${fileName}\`: [[${body}]] → \`${wikiPageStem(target)}.md\` not found`);
-    }
-  }
-  return issues;
+  return [...content.matchAll(WIKI_LINK_PATTERN)]
+    .map(([, body = ""]) => brokenLinkIssue(fileName, body, fileSlugs))
+    .filter((issue): issue is string => issue !== null);
 }
 
 function formatTagList(tags: readonly string[]): string {

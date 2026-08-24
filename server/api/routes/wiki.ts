@@ -106,6 +106,21 @@ function buildIndexResponse(action: string): WikiResponse {
   };
 }
 
+/** The agent's next step for a page read. An existing page is named by
+ *  the file that actually resolved — the request may have reached it by
+ *  fuzzy or title match, so re-deriving a stem from what was asked for
+ *  would point at a different file. A missing page is named by the stem
+ *  the agent would have to create, which some requests cannot yield. */
+function pageInstructions(args: { hasContent: boolean; missing: boolean; pageName: string; resolvedTitle: string }): string {
+  const { hasContent, missing, pageName, resolvedTitle } = args;
+  if (hasContent) return "The wiki page is now displayed on the canvas.";
+  if (!missing)
+    return `Page exists but is empty: wiki/pages/${resolvedTitle}.md has no content yet. Research the topic and write a comprehensive article, then save it to the same path.`;
+  const stem = wikiPageStem(pageName);
+  if (stem === null) return `Page not found: "${pageName}" cannot be used as a page filename. Check the slug in wiki/index.md.`;
+  return `Page not found: wiki/pages/${stem}.md does not exist. You can create it or check the slug in wiki/index.md.`;
+}
+
 // Pure branching helper extracted from buildPageResponse so the three
 // states (missing / empty / has-content) can be pinned by unit tests
 // without requiring a real filesystem. The I/O wrapper below supplies
@@ -125,14 +140,9 @@ export function buildPageResponseData(args: { action: string; pageName: string; 
   // instructions now distinguish missing vs empty so the client and
   // the agent get consistent signals.
   const missing = !exists;
-  const slug = wikiPageStem(pageName);
   const errorMessage = missing ? `Page not found: ${pageName}` : hasContent ? undefined : `Page is empty: ${pageName}`;
   const statusMessage = hasContent ? `Showing page: ${resolvedTitle}` : missing ? `Page not found: ${pageName}` : `Page exists but is empty: ${resolvedTitle}`;
-  const statusInstructions = hasContent
-    ? "The wiki page is now displayed on the canvas."
-    : missing
-      ? `Page not found: wiki/pages/${slug}.md does not exist. You can create it or check the slug in wiki/index.md.`
-      : `Page exists but is empty: wiki/pages/${slug}.md has no content yet. Research the topic and write a comprehensive article, then save it to the same path.`;
+  const statusInstructions = pageInstructions({ hasContent, missing, pageName, resolvedTitle });
   return {
     data: {
       action,

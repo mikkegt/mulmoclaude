@@ -99,8 +99,16 @@ describe("wikiPageStem", () => {
     assert.equal(wikiPageStem("  さくらインターネット  "), "さくらインターネット");
   });
 
-  it("falls back to the slug for names unsafe as a filename", () => {
-    assert.equal(wikiPageStem("../秘密"), "");
-    assert.equal(wikiPageStem("日本語/ページ"), "");
+  it("returns null for names that cannot be a page filename", () => {
+    // Salvaging a stem here would send the caller to a file it never
+    // asked for — `../secrets` would read as `secrets.md` (Codex review).
+    assert.equal(wikiPageStem("../秘密"), null);
+    assert.equal(wikiPageStem("日本語/ページ"), null);
+    assert.equal(wikiPageStem("../secrets"), null);
+    assert.equal(wikiPageStem(""), null);
+  });
+
+  it("returns null when an ASCII name slugifies to nothing", () => {
+    assert.equal(wikiPageStem("!!!"), null);
   });
 });

@@ -60,15 +60,20 @@ function hasNonAscii(text: string): boolean {
   return [...text].some((char) => (char.codePointAt(0) ?? 0) > MAX_ASCII_CODE_POINT);
 }
 
-/** Filename stem to suggest when a page has to be created for `name`.
+/** Filename stem to suggest when a page has to be created for `name`,
+ *  or null when `name` cannot yield one.
  *
  *  ASCII names keep the hyphenated slug convention. A non-ASCII name is
  *  suggested verbatim — the write chokepoint accepts any `isSafeSlug`
  *  filename, and slugifying it would propose a stripped remnant like
- *  `-4.md` (#2940). Names that are unsafe as a filename fall back to
- *  the slug, which cannot contain a separator. */
-export function wikiPageStem(name: string): string {
+ *  `-4.md` (#2940). Null rather than a salvaged stem for a name the
+ *  write guard would reject anyway: suggesting `wiki/pages/.md`, or
+ *  `secrets.md` for `../secrets`, sends the caller to a file it did
+ *  not ask for. */
+export function wikiPageStem(name: string): string | null {
   const trimmed = name.trim();
-  if (!isSafeSlug(trimmed) || !hasNonAscii(trimmed)) return wikiSlugify(trimmed);
-  return trimmed;
+  if (!isSafeSlug(trimmed)) return null;
+  if (hasNonAscii(trimmed)) return trimmed;
+  const slug = wikiSlugify(trimmed);
+  return slug.length > 0 ? slug : null;
 }
