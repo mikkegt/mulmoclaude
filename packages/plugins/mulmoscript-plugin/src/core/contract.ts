@@ -31,6 +31,32 @@ export interface MulmoScriptGenerationEvent {
  *  (full channel: `plugin:<scope>:generation`). */
 export const GENERATION_EVENT = "generation";
 
+/** Plugin pubsub event name for "this script changed on disk"
+ *  (full channel: `plugin:<scope>:scriptChanged`). */
+export const SCRIPT_CHANGED_EVENT = "scriptChanged";
+
+/**
+ * A script was written — by the agent, or by another View.
+ *
+ * `origin` is who wrote it. A View passes its own id on every write and ignores the echo of
+ * its own: without that, a keystroke would round-trip through the server and reload the very
+ * element the caret is in. An agent write carries no origin, so every View reloads.
+ */
+export interface MulmoScriptChangedEvent {
+  filePath: string;
+  origin?: string;
+}
+
+/**
+ * Whether a View watching `watching` should reload because of `event`.
+ *
+ * A pure rule rather than a condition inside the subscriber, because the case that matters is
+ * the one that is invisible when it is wrong: a View acting on the echo of its own write
+ * rebuilds the element the caret is in, on every keystroke.
+ */
+export const shouldReloadForScriptChange = (event: MulmoScriptChangedEvent, watching: string, ownOrigin: string): boolean =>
+  watching !== "" && event.filePath === watching && event.origin !== ownOrigin;
+
 interface BeatRef {
   filePath: string;
   beatIndex: number;
@@ -50,8 +76,8 @@ interface SessionTag {
 
 export type MulmoScriptDispatchArgs =
   | ({ kind: "save" } & { filePath?: string; script?: unknown; filename?: string })
-  | { kind: "updateBeat"; filePath: string; beatIndex: number; beat: unknown }
-  | { kind: "updateScript"; filePath: string; script: unknown }
+  | { kind: "updateBeat"; filePath: string; beatIndex: number; beat: unknown; origin?: string }
+  | { kind: "updateScript"; filePath: string; script: unknown; origin?: string }
   | ({ kind: "beatImage" } & BeatRef)
   | ({ kind: "beatAudio" } & BeatRef)
   | ({ kind: "beatMovie" } & BeatRef)

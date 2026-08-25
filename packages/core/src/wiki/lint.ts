@@ -28,7 +28,9 @@ export function findOrphanPages(fileSlugs: ReadonlySet<string>, indexedSlugs: Re
 export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlugs: ReadonlySet<string>): string[] {
   const issues: string[] = [];
   for (const entry of pageEntries) {
-    if (!fileSlugs.has(entry.slug)) {
+    if (entry.slug.length === 0) {
+      issues.push(`- **Malformed entry**: index.md lists \`${entry.title}\` with no page name`);
+    } else if (!fileSlugs.has(entry.slug)) {
       issues.push(`- **Missing file**: index.md references \`${entry.slug}\` but the file does not exist`);
     }
   }
@@ -45,10 +47,12 @@ export function findMissingFiles(pageEntries: readonly WikiPageEntry[], fileSlug
  *  "broken link" warnings. */
 function brokenLinkIssue(fileName: string, body: string, fileSlugs: ReadonlySet<string>, slugByTitle: ReadonlyMap<string, string>): string | null {
   const { target } = parseWikiLink(body);
-  // Empty target is its own diagnostic — `[[|display]]` or `[[]]` has
-  // nothing to resolve and would otherwise be flagged identically to a
-  // real broken link. Keep the original raw bracket body in the report
-  // so the user can grep their pages for the malformed link.
+  // Empty target is its own diagnostic — `[[|display]]` has nothing to
+  // resolve and would otherwise be flagged identically to a real broken
+  // link. Keep the original raw bracket body in the report so the user
+  // can grep their pages for the malformed link. (`[[]]` never reaches
+  // here: a zero-length body matches neither `WIKI_LINK_PATTERN` nor the
+  // renderer's scanner, so it stays literal text everywhere.)
   if (target.trim().length === 0) return `- **Broken link** in \`${fileName}\`: [[${body}]] → empty target`;
   if (resolveLinkTarget(target, fileSlugs, slugByTitle) !== null) return null;
   const stem = wikiPageStem(target);
