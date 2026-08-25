@@ -10,6 +10,7 @@
 import { SCHEDULE_TYPES, isDueAt, parseTimeToMs, type TaskSchedule as LibrarySchedule } from "@receptron/task-scheduler";
 
 const ONE_SECOND_MS = 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * ONE_SECOND_MS;
 
 /** A schedule as the host states it: intervals in milliseconds, or a daily
  *  `HH:MM` UTC time. */
@@ -21,6 +22,16 @@ export type TaskSchedule = { type: typeof SCHEDULE_TYPES.interval; intervalMs: n
  *  everywhere and so hides itself. */
 function isUsableInterval(intervalMs: number): boolean {
   return Number.isFinite(intervalMs) && intervalMs > 0;
+}
+
+/** Milliseconds past UTC midnight for a daily `HH:MM`, or null when the string
+ *  does not name a time of day. Out-of-range values are rejected, not clamped
+ *  and not wrapped: `"24:00"` would otherwise land on the NEXT day's midnight
+ *  and `"-1:00"` on an hour before it, so a typo that used to be inert would
+ *  start firing — at 00:00 daily, or 61 times a day. */
+function dailyOffsetMs(time: string): number | null {
+  const offsetMs = parseTimeToMs(time);
+  return Number.isFinite(offsetMs) && offsetMs >= 0 && offsetMs < ONE_DAY_MS ? offsetMs : null;
 }
 
 /** Convert to the library's schedule shape. Milliseconds are divided, never
@@ -37,7 +48,7 @@ export function toLibrarySchedule(schedule: TaskSchedule): LibrarySchedule {
  *  Windows are anchored to the epoch, not to the current UTC day, so an
  *  interval longer than 24h keeps its real period. */
 export function isScheduleDueAt(schedule: TaskSchedule, nowMs: number, tickMs: number): boolean {
-  if (schedule.type === SCHEDULE_TYPES.interval && !isUsableInterval(schedule.intervalMs)) return false;
+  if (unfireableScheduleReason(schedule) !== null) return false;
   return isDueAt(toLibrarySchedule(schedule), nowMs, tickMs);
 }
 
@@ -49,5 +60,5 @@ export function unfireableScheduleReason(schedule: TaskSchedule): { field: strin
   if (schedule.type === SCHEDULE_TYPES.interval) {
     return isUsableInterval(schedule.intervalMs) ? null : { field: "intervalMs", value: String(schedule.intervalMs) };
   }
-  return Number.isFinite(parseTimeToMs(schedule.time)) ? null : { field: "time", value: schedule.time };
+  return dailyOffsetMs(schedule.time) !== null ? null : { field: "time", value: schedule.time };
 }

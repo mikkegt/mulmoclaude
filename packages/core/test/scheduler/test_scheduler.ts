@@ -287,6 +287,50 @@ test("initScheduler registers system tasks with the task-manager and exposes the
   }
 });
 
+// The tick path refuses to fire an unusable schedule, but catch-up runs FIRST
+// and enumerates windows from the persisted lastRunAt. For an interval of 0
+// those windows come back NaN, `listMissedWindows` fills to its cap, and the
+// first `new Date(NaN)` throws — so one bad task aborted startup for all of
+// them. Reported by Codex on #2955.
+test("a task with an unusable interval does not take startup down with it", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sched-"));
+  try {
+    configure(root);
+    await mkdir(path.join(root, "config", "scheduler"), { recursive: true });
+    await writeFile(
+      path.join(root, "config", "scheduler", "state.json"),
+      JSON.stringify({ broken: { taskId: "broken", lastRunAt: new Date(Date.now() - 86_400_000).toISOString(), totalRuns: 1 } }),
+    );
+
+    let ran = 0;
+    const registered: string[] = [];
+    const fakeTm = stubTm({
+      registerTask: (def: TaskDefinition) => {
+        registered.push(def.id);
+      },
+    });
+    const tasks: SystemTaskDef[] = [
+      {
+        id: "broken",
+        name: "Broken",
+        description: "d",
+        schedule: { type: SCHEDULE_TYPES.interval, intervalMs: 0 },
+        missedRunPolicy: MISSED_RUN_POLICIES.runOnce,
+        run: async () => {
+          ran++;
+        },
+      },
+    ];
+
+    await initScheduler(fakeTm, tasks);
+    assert.equal(ran, 0, "an unfireable task must not be caught up");
+    // Still registered: the task-manager is where the bad schedule is reported.
+    assert.deepEqual(registered, ["broken"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a scheduled run executes the task and persists state to the injected workspace", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "sched-"));
   try {

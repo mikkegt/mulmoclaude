@@ -32,7 +32,7 @@ import {
   type LogDeps,
 } from "@receptron/task-scheduler";
 import type { ITaskManager, TaskDefinition, SchedulerLogger } from "./task-manager.js";
-import { toLibrarySchedule } from "./schedule-window.js";
+import { toLibrarySchedule, unfireableScheduleReason } from "./schedule-window.js";
 import { errorMessage } from "../utils/errors.js";
 
 const ONE_SECOND_MS = 1000;
@@ -125,15 +125,7 @@ export async function initScheduler(taskManager: ITaskManager, tasks: SystemTask
   systemTasks.push(...tasks);
   taskManagerRef = taskManager;
 
-  // Run catch-up
-  const catchUpTasks: CatchUpTask[] = tasks.map((taskDef) => ({
-    id: taskDef.id,
-    name: taskDef.name,
-    schedule: toLibrarySchedule(taskDef.schedule),
-    missedRunPolicy: taskDef.missedRunPolicy,
-    enabled: true,
-  }));
-  const plan = computeCatchUpPlan(catchUpTasks, stateMap, Date.now());
+  const plan = computeCatchUpPlan(catchUpTasksFor(tasks), stateMap, Date.now());
 
   for (const skip of plan.skipped) {
     logger().info("catch-up skipped", { taskId: skip.taskId, windows: skip.windowCount });
@@ -163,6 +155,31 @@ export async function initScheduler(taskManager: ITaskManager, tasks: SystemTask
   }
 
   logger().info("initialized", { tasks: tasks.map((taskDef) => taskDef.id), stateEntries: stateMap.size });
+}
+
+/** The catch-up input, with the tasks that can never fire left out. Their
+ *  windows come back NaN rather than null, which `listMissedWindows` cannot
+ *  see the end of — it fills to its cap and the first `new Date(NaN)` throws
+ *  `RangeError`, taking every other task's catch-up down with it at startup.
+ *  Registration still happens, so the task-manager reports the bad schedule. */
+function catchUpTasksFor(tasks: SystemTaskDef[]): CatchUpTask[] {
+  return tasks
+    .filter((taskDef) => {
+      const reason = unfireableScheduleReason(taskDef.schedule);
+      if (reason === null) return true;
+      logger().error(`schedule has an unusable ${reason.field} — skipping catch-up, this task will never run`, {
+        taskId: taskDef.id,
+        [reason.field]: reason.value,
+      });
+      return false;
+    })
+    .map((taskDef) => ({
+      id: taskDef.id,
+      name: taskDef.name,
+      schedule: toLibrarySchedule(taskDef.schedule),
+      missedRunPolicy: taskDef.missedRunPolicy,
+      enabled: true,
+    }));
 }
 
 /** Apply a schedule override to a running system task. Updates the
@@ -366,6 +383,10 @@ function computeCurrentWindow(task: SystemTaskDef): string {
 }
 
 function computeNextScheduledFor(schedule: TaskDefinition["schedule"]): string | null {
+  // The engine will never fire this one, so promising a next run in the UI
+  // would be a lie — and the library still hands back a window for some of
+  // them (`"24:00"` resolves to tomorrow's midnight).
+  if (unfireableScheduleReason(schedule) !== null) return null;
   const next = nextWindowAfter(toLibrarySchedule(schedule), Date.now() + 1);
   // A schedule with no usable window answers NaN, not null — and
   // `new Date(NaN).toISOString()` throws, taking the whole state write with it.

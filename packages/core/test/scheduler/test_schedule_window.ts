@@ -97,6 +97,13 @@ test("a schedule that can never fire is inert, and says which field is wrong", (
   const unusable: TaskSchedule[] = [
     { type: SCHEDULE_TYPES.daily, time: "not a time" },
     { type: SCHEDULE_TYPES.daily, time: "" },
+    // Out of range, not merely odd: a library window for these lands on the
+    // NEXT day's midnight (`"24:00"`, `"23:60"`) or an hour before it
+    // (`"-1:00"`), which would turn an inert typo into a firing task.
+    { type: SCHEDULE_TYPES.daily, time: "24:00" },
+    { type: SCHEDULE_TYPES.daily, time: "23:60" },
+    { type: SCHEDULE_TYPES.daily, time: "25:00" },
+    { type: SCHEDULE_TYPES.daily, time: "-1:00" },
     { type: SCHEDULE_TYPES.interval, intervalMs: 0 },
     { type: SCHEDULE_TYPES.interval, intervalMs: -ONE_HOUR_MS },
     { type: SCHEDULE_TYPES.interval, intervalMs: Number.NaN },
@@ -109,6 +116,7 @@ test("a schedule that can never fire is inert, and says which field is wrong", (
   assert.deepEqual(unfireableScheduleReason({ type: SCHEDULE_TYPES.interval, intervalMs: 0 }), { field: "intervalMs", value: "0" });
   assert.deepEqual(unfireableScheduleReason({ type: SCHEDULE_TYPES.daily, time: "xx:yy" }), { field: "time", value: "xx:yy" });
   assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.daily, time: "07:30" }), null);
+  assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.daily, time: "23:59" }), null, "the last minute of the day is a real time");
   assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.interval, intervalMs: ONE_HOUR_MS }), null);
 });
 
