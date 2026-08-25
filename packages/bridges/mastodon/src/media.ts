@@ -15,6 +15,11 @@ export interface ImageMedia {
  *  bridges — an instruction, so the agent treats the image as the
  *  subject rather than looking for a caption. */
 const ATTACHMENT_ONLY_PROMPT = "Describe / analyze this file.";
+/** chat-service's `parseAttachments` drops whatever pushes a message past
+ *  this much base64, silently, and the socket frame is capped just above
+ *  it. Mirrored here so the bridge can say what it left out instead of
+ *  letting the message be truncated or the connection closed. */
+export const MAX_TOTAL_BASE64_CHARS = 20 * 1024 * 1024;
 
 /** The image entries of a status' `media_attachments`, in order. */
 export function imageMediaEntries(media: unknown): ImageMedia[] {
@@ -43,4 +48,19 @@ export function resolveMessageText(text: string, dropped: number): string {
   if (dropped <= 0) return body;
   const plural = dropped === 1 ? "file" : "files";
   return `${body}\n\n(note: ${dropped} attached ${plural} could not be downloaded)`;
+}
+
+/** The images that fit in one message, in order. Mastodon does not state
+ *  a media entry's size up front, so the budget can only be spent once
+ *  the bytes are in hand. An image that does not fit is skipped rather
+ *  than ending the loop: a smaller one after it may still fit. */
+export function fitBudget<T extends { data: string }>(attachments: T[]): T[] {
+  const kept: T[] = [];
+  let remaining = MAX_TOTAL_BASE64_CHARS;
+  attachments.forEach((attachment) => {
+    if (attachment.data.length > remaining) return;
+    remaining -= attachment.data.length;
+    kept.push(attachment);
+  });
+  return kept;
 }

@@ -25,7 +25,7 @@ import WebSocket from "ws";
 import { createBridgeClient, chunkText, formatAckReply, frameText } from "@mulmobridge/client";
 import { isRecord, parseCsvSet } from "@mulmoclaude/common";
 import { parseNotificationRaw, parseFrame, type JsonRecord, type ParsedStatus } from "./parse.js";
-import { hasRelayableContent, imageMediaEntries, isLostImagesOnly, resolveMessageText, type ImageMedia } from "./media.js";
+import { fitBudget, hasRelayableContent, imageMediaEntries, isLostImagesOnly, resolveMessageText, type ImageMedia } from "./media.js";
 import { resolvePublicUrl } from "./urlGuard.js";
 
 const TRANSPORT_ID = "mastodon";
@@ -177,7 +177,10 @@ async function collectImageAttachments(media: ImageMedia[]): Promise<MulmoAttach
     const att = await fetchImageAttachment(item.url);
     if (att) out.push(att);
   }
-  return out;
+  // Four images at the 8 MB cap are 42 MB of base64 — past both the
+  // server's attachment budget and the socket frame. Trim here so the
+  // caller can count what was left out.
+  return fitBudget(out);
 }
 
 // ── Notification handling ───────────────────────────────────────

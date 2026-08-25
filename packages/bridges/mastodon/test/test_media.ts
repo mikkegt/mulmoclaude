@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { hasRelayableContent, imageMediaEntries, isLostImagesOnly, resolveMessageText } from "../src/media.ts";
+import { fitBudget, hasRelayableContent, imageMediaEntries, isLostImagesOnly, resolveMessageText, MAX_TOTAL_BASE64_CHARS } from "../src/media.ts";
 
 describe("imageMediaEntries", () => {
   it("keeps the image entries in order", () => {
@@ -85,5 +85,35 @@ describe("isLostImagesOnly", () => {
 
   it("is false once at least one image is in hand", () => {
     assert.equal(isLostImagesOnly("", 1), false);
+  });
+});
+
+describe("fitBudget", () => {
+  const entry = (chars: number) => ({ data: "x".repeat(chars) });
+
+  it("keeps everything that fits", () => {
+    const kept = fitBudget([entry(10), entry(20)]);
+    assert.equal(kept.length, 2);
+  });
+
+  it("stops at the budget the server enforces", () => {
+    // Four images at the bridge's 8 MB cap: ~10.7 MB of base64 each.
+    const perImage = Math.ceil((8 * 1024 * 1024) / 3) * 4;
+    const kept = fitBudget([entry(perImage), entry(perImage), entry(perImage), entry(perImage)]);
+    const total = kept.reduce((sum, item) => sum + item.data.length, 0);
+    assert.equal(kept.length, 1, "only one 10.7 MB image fits in the 20 MB budget alongside… nothing else that big");
+    assert.equal(total <= MAX_TOTAL_BASE64_CHARS, true);
+  });
+
+  it("skips one oversized image but keeps a small one after it", () => {
+    const kept = fitBudget([entry(MAX_TOTAL_BASE64_CHARS - 5), entry(100), entry(3)]);
+    assert.deepEqual(
+      kept.map((item) => item.data.length),
+      [MAX_TOTAL_BASE64_CHARS - 5, 3],
+    );
+  });
+
+  it("returns an empty list for no images", () => {
+    assert.deepEqual(fitBudget([]), []);
   });
 });
