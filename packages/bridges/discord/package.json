@@ -16,8 +16,8 @@
     "build": "tsc",
     "prepack": "yarn build",
     "typecheck": "tsc --noEmit",
-    "test": "echo no tests yet",
-    "lint": "eslint src"
+    "test": "tsx --test test/test_*.ts",
+    "lint": "eslint src test"
   },
   "license": "MIT",
   "author": "Receptron Team",
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3"
   },
   "homepage": "https://github.com/receptron/mulmoclaude/tree/main/packages/bridges/discord#readme",
