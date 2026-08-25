@@ -150,6 +150,12 @@ describe("parseIndexEntries — bullet formats", () => {
     assert.equal(parseIndexEntries("- [[|日本語]] — note")[0]?.title, "日本語", "the display half still titles the entry");
   });
 
+  it("skips `- [[]]` — a zero-length body is not a bullet wiki link", () => {
+    // index.md is freeform markdown: an unrecognised row is skipped,
+    // the same as a heading or a prose paragraph.
+    assert.deepEqual(parseIndexEntries("- [[]] — note"), []);
+  });
+
   it("keeps slugifying an ASCII `- [[…]]` target", () => {
     const entries = parseIndexEntries("- [[Sakura Internet]] — note");
     assert.equal(entries[0]?.slug, "sakura-internet");

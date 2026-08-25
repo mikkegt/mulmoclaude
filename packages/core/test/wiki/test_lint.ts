@@ -76,6 +76,13 @@ describe("findBrokenLinksInPage — [[slug|alias]] regression", () => {
     assert.equal(findBrokenLinksInPage("a.md", content, fileSlugs, slugByTitle).length, 1);
   });
 
+  it("leaves `[[]]` alone — a zero-length body is not a wiki link at all", () => {
+    // Pins the boundary Codex read the other way twice: `[[]]` matches
+    // neither WIKI_LINK_PATTERN nor the renderer's scanner, so it is
+    // literal text, not an empty-target link.
+    assert.deepEqual(findBrokenLinksInPage("a.md", "see [[]] here", new Set(["x"])), []);
+  });
+
   it("says a target that cannot be a filename is unusable, not merely missing", () => {
     // `../secrets` is rejected by the write guard, so `../secrets.md
     // not found` would invite creating a file that cannot exist.
