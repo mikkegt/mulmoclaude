@@ -1,11 +1,11 @@
-// #1575 — when every beat is a `slide`, the View swaps the per-beat list for
-// the interactive deck editor (@mulmocast/beat-editor). Each editor emit fires
+// #1575 — the View offers the interactive beat editor (@mulmocast/beat-editor) beside the
+// per-beat list. Each editor emit fires
 // `update:script`; this debounces them into one updateScript round-trip per
 // quiet stretch (300ms — short enough to feel live, long enough that typing in
 // the Inspector doesn't carpet-bomb the server).
 
 import { computed, type ComputedRef } from "vue";
-import { isAllSlideDeck } from "../helpers";
+import { hasEditableBeats } from "../helpers";
 import type { MulmoScriptTransport } from "../transport";
 import type { DeckScriptShape, MulmoScript } from "../viewTypes";
 
@@ -33,7 +33,7 @@ export interface UseDeckEditorOptions {
 }
 
 export function useDeckEditor({ api, filePath, effectiveScript, commitScript }: UseDeckEditorOptions) {
-  const isDeck = computed(() => isAllSlideDeck(effectiveScript.value));
+  const canEditBeats = computed(() => hasEditableBeats(effectiveScript.value));
   const deckScriptInput = computed<DeckScriptShape>(() => effectiveScript.value as unknown as DeckScriptShape);
 
   let deckSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,5 +95,5 @@ export function useDeckEditor({ api, filePath, effectiveScript, commitScript }: 
     );
   }
 
-  return { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites };
+  return { canEditBeats, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites };
 }

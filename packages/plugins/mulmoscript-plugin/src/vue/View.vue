@@ -88,11 +88,33 @@
 
          No `layout` prop: the editor lays itself out from its own width, so the pane
          moves below the list on a narrow host (this card) rather than beside it. -->
-    <div v-if="isDeck" class="flex-1 overflow-hidden" data-testid="mulmo-script-deck-editor" @focusout="onDeckFocusOut">
+    <!-- Two ways to look at the same script, not two kinds of script. The editor edits every
+         beat type; the list is where the media lives (generate audio, render an image, open a
+         clip), which the editor has no equivalent for — so neither replaces the other. -->
+    <div v-if="canEditBeats" class="flex shrink-0 gap-1 px-2 pt-1 text-[11px]">
+      <button
+        type="button"
+        :class="beatPaneTabClass(beatPane === 'edit')"
+        data-testid="mulmo-script-tab-edit"
+        @click="beatPane = 'edit'"
+      >
+        {{ m.editTab }}
+      </button>
+      <button
+        type="button"
+        :class="beatPaneTabClass(beatPane === 'media')"
+        data-testid="mulmo-script-tab-media"
+        @click="beatPane = 'media'"
+      >
+        {{ m.mediaTab }}
+      </button>
+    </div>
+
+    <div v-if="showBeatEditor" class="flex-1 overflow-hidden" data-testid="mulmo-script-deck-editor" @focusout="onDeckFocusOut">
       <BeatListEditor :beats="deckBeats" @update:beats="onDeckBeatsUpdate" />
     </div>
 
-    <!-- Beat list (fallback when the script has any non-slide beat) -->
+    <!-- Per-beat media list: thumbnails, narration, audio / image / movie generation. -->
     <div v-else ref="beatListEl" class="flex-1 overflow-y-auto p-2 space-y-1.5">
       <div v-for="(beat, index) in beats" :key="index" class="rounded-lg border border-gray-200 overflow-hidden">
         <!-- Beat body: thumbnail + narration side by side -->
@@ -704,7 +726,25 @@ function commitScript(next: MulmoScript): void {
 // interactive deck editor (@mulmocast/beat-editor). Mixed scripts (any non-slide
 // beat) fall back to the existing list. The debounce + flush-on-unmount live
 // in the composable.
-const { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+const { canEditBeats, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+
+/**
+ * Which pane the beats are shown in.
+ *
+ * `edit` is the beat editor — every beat type, edited in place. `media` is the per-beat list,
+ * which is the only place audio / image / movie generation lives. A script with nothing to edit
+ * has only the list, so the switch is hidden and this is ignored.
+ *
+ * `media` is the default because opening the script is what triggers rendering each beat's
+ * image: the auto-render on mount lives in that list, so defaulting to `edit` silently stopped
+ * thumbnails from being produced at all. Someone who wants to edit clicks once; nobody has to
+ * click to get the previews they always got.
+ */
+const beatPane = ref<"edit" | "media">("media");
+const showBeatEditor = computed(() => canEditBeats.value && beatPane.value === "edit");
+
+const BEAT_TAB_BASE = "rounded px-2 py-0.5 font-sans";
+const beatPaneTabClass = (active: boolean) => [BEAT_TAB_BASE, active ? "bg-gray-700 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"];
 
 // An agent (or another window) wrote this script — pull it back off disk so the preview shows
 // what is actually there. Registered here rather than in the composable because reloading is
