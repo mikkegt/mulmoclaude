@@ -76,6 +76,13 @@ describe("findBrokenLinksInPage — [[slug|alias]] regression", () => {
     assert.equal(findBrokenLinksInPage("a.md", content, fileSlugs, slugByTitle).length, 1);
   });
 
+  it("leaves `[[]]` alone — a zero-length body is not a wiki link at all", () => {
+    // Pins the boundary Codex read the other way twice: `[[]]` matches
+    // neither WIKI_LINK_PATTERN nor the renderer's scanner, so it is
+    // literal text, not an empty-target link.
+    assert.deepEqual(findBrokenLinksInPage("a.md", "see [[]] here", new Set(["x"])), []);
+  });
+
   it("says a target that cannot be a filename is unusable, not merely missing", () => {
     // `../secrets` is rejected by the write guard, so `../secrets.md
     // not found` would invite creating a file that cannot exist.
@@ -114,6 +121,19 @@ describe("findOrphanPages / findMissingFiles", () => {
     ];
     const fileSlugs = new Set(["a"]);
     assert.deepEqual(findMissingFiles(entries, fileSlugs), ["- **Missing file**: index.md references `b` but the file does not exist"]);
+  });
+});
+
+describe("findMissingFiles — malformed entries", () => {
+  it("names an entry with no page name as malformed, not as a missing file", () => {
+    // `- [[|日本語]]` parses to an empty slug; "references `` but the
+    // file does not exist" is unactionable (Codex review on #2946).
+    const entries: WikiPageEntry[] = [{ slug: "", title: "日本語", description: "", tags: [] }];
+    const issues = findMissingFiles(entries, new Set(["sakura-internet"]));
+    assert.equal(issues.length, 1);
+    const [issue] = issues;
+    assert.ok(issue);
+    assert.match(issue, /Malformed entry.*日本語.*no page name/);
   });
 });
 

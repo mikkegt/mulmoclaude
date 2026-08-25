@@ -31,6 +31,32 @@ plugin now, which keeps it correct on any host rather than one that remembers to
 
 ### Fixed
 
+#### The lint called a Japanese wiki page both missing and orphaned at the same time (#2944)
+
+`index.md` supports three shapes, and one of them — `- [[page name]]` — derives
+the entry's slug by slugifying the text between the brackets. For a page file
+named in Japanese that produced `-4`, while the file itself is indexed under its
+real stem. The two never met, so the same page was reported as an index entry
+whose file is missing AND as a file the index never mentions. Following either
+diagnostic makes it worse.
+
+Entries whose only identifier is human-written text now keep a safe non-ASCII
+name verbatim, the same rule the "create this page" hint uses. ASCII entries are
+untouched: `- [[Sakura Internet]]` still indexes `sakura-internet`, and a name no
+file could carry still falls back to the old slug rather than becoming an empty
+entry.
+
+An index entry written with no page name at all — `- [[|display text]]` — used to
+borrow the display half as its slug, so a typo could quietly name a real page and
+disappear from the report. It is now reported as a malformed entry instead, with
+a message that says what is wrong rather than the old "references `` but the file
+does not exist".
+
+One consequence worth knowing about: `findTagDrift` looks its pages up by
+`entry.slug`, so for these pages it has been silently skipping the check
+entirely. It now runs, and a wiki with genuine frontmatter/index tag differences
+on non-ASCII pages will start reporting them.
+
 #### Wiki pages named in Japanese could not be opened, and every link to one was reported broken (#2940)
 
 A wiki page's slug IS its filename stem, so a page saved as
