@@ -175,12 +175,28 @@ function withinBudget(files: DiscordAttachmentLike[]): { considered: DiscordAtta
   return { considered, skipped };
 }
 
+/** Re-check the budget against the bytes actually in hand. `withinBudget`
+ *  spends it on Discord's declared sizes; this is what makes the guarantee
+ *  hold if a declared size ever under-reports, since the server would
+ *  otherwise truncate the overflow without telling anyone. */
+function fitBudget(attachments: Attachment[]): Attachment[] {
+  const kept: Attachment[] = [];
+  let remaining = MAX_TOTAL_BASE64_CHARS;
+  attachments.forEach((attachment) => {
+    const cost = attachment.data?.length ?? 0;
+    if (cost > remaining) return;
+    remaining -= cost;
+    kept.push(attachment);
+  });
+  return kept;
+}
+
 export async function collectAttachments(files: DiscordAttachmentLike[], deps: DownloadDeps): Promise<CollectedAttachments> {
   const log = deps.log ?? defaultLog;
   const { considered, skipped } = withinBudget(files);
   skipped.forEach((file) => log.warn(`[discord] attachment skipped: ${logLabel(file.name)} — over what one message may carry`));
   const results = await Promise.all(considered.map((file) => downloadAttachment(file, deps)));
-  const attachments = results.filter((entry): entry is Attachment => entry !== null);
+  const attachments = fitBudget(results.filter((entry): entry is Attachment => entry !== null));
   return { attachments, dropped: files.length - attachments.length };
 }
 

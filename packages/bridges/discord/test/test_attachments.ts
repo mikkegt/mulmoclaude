@@ -187,6 +187,19 @@ describe("collectAttachments", () => {
     assert.equal(fetchFn.calls.length, 1, "the files that cannot be sent are never downloaded");
   });
 
+  it("still holds the budget when Discord under-reports a file's size", async () => {
+    // `withinBudget` trusts the declared size; this pins that the bytes
+    // actually downloaded are re-checked, so the server never has to
+    // truncate silently.
+    const oversized = new Uint8Array(3 * 1024 * 1024); // ~4 MB of base64 each
+    const fetchFn = stubFetch(oversized);
+    const files = Array.from({ length: 6 }, (_, i) => file({ name: `f${i}.png`, size: 1 })); // all claim 1 byte
+    const got = await collectAttachments(files, { fetchFn, log: silentLog });
+    const total = got.attachments.reduce((sum, entry) => sum + (entry.data?.length ?? 0), 0);
+    assert.equal(total <= MAX_TOTAL_BASE64_CHARS, true, `forwarded ${total} chars, over the ${MAX_TOTAL_BASE64_CHARS} budget`);
+    assert.equal(got.attachments.length + got.dropped, files.length, "every file is either forwarded or counted as dropped");
+  });
+
   it("keeps a small file that still fits after a big one was skipped", async () => {
     const fetchFn = stubFetch(new Uint8Array([1]));
     const files = [
