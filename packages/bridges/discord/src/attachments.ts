@@ -39,6 +39,9 @@ export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 /** chat-service's `parseAttachments` drops everything past the tenth
  *  entry, so downloading more than that is wasted bandwidth. */
 export const MAX_ATTACHMENT_COUNT = 10;
+/** …and it drops whatever pushes the message past this much base64,
+ *  silently. Mirrored here so the bridge can say what it left out. */
+export const MAX_TOTAL_BASE64_CHARS = 20 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
 const FALLBACK_MIME = "application/octet-stream";
 /** chat-service rejects an empty `text`, so an attachment-only message
@@ -106,10 +109,15 @@ async function drainCapped(reader: ReadableStreamDefaultReader<Uint8Array>, maxB
 /** Read at most `maxBytes`, aborting mid-stream rather than after the
  *  fact — `arrayBuffer()` would have already materialised the body. */
 async function readCappedBody(res: Response, maxBytes: number): Promise<Buffer | null> {
-  const declared = Number(res.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > maxBytes) return null;
   const { body } = res;
   if (body === null) return null;
+  const declared = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    // Returning without draining would leave the connection open until
+    // the socket times out, one leak per oversized attachment.
+    await body.cancel();
+    return null;
+  }
   return drainCapped(body.getReader(), maxBytes);
 }
 
@@ -138,8 +146,39 @@ export async function downloadAttachment(file: DiscordAttachmentLike, deps: Down
   }
 }
 
+/** Length of the base64 a payload of `byteLength` bytes encodes to —
+ *  4 characters per 3-byte group, rounded up. That string length, not
+ *  the raw size, is what the server's per-message budget counts. */
+export function base64Length(byteLength: number): number {
+  return Math.ceil(byteLength / 3) * 4;
+}
+
+/** Spend the server's per-message budget before anything is downloaded —
+ *  Discord states each file's size up front. Without this the bridge
+ *  would ship attachments that `parseAttachments` silently truncates,
+ *  so the user is never told a file went missing. A file that does not
+ *  fit is skipped rather than ending the loop: a smaller one after it
+ *  may still fit. */
+function withinBudget(files: DiscordAttachmentLike[]): { considered: DiscordAttachmentLike[]; skipped: DiscordAttachmentLike[] } {
+  const considered: DiscordAttachmentLike[] = [];
+  const skipped: DiscordAttachmentLike[] = [];
+  let remaining = MAX_TOTAL_BASE64_CHARS;
+  files.forEach((file) => {
+    const cost = base64Length(file.size);
+    if (considered.length >= MAX_ATTACHMENT_COUNT || cost > remaining) {
+      skipped.push(file);
+      return;
+    }
+    remaining -= cost;
+    considered.push(file);
+  });
+  return { considered, skipped };
+}
+
 export async function collectAttachments(files: DiscordAttachmentLike[], deps: DownloadDeps): Promise<CollectedAttachments> {
-  const considered = files.slice(0, MAX_ATTACHMENT_COUNT);
+  const log = deps.log ?? defaultLog;
+  const { considered, skipped } = withinBudget(files);
+  skipped.forEach((file) => log.warn(`[discord] attachment skipped: ${logLabel(file.name)} — over what one message may carry`));
   const results = await Promise.all(considered.map((file) => downloadAttachment(file, deps)));
   const attachments = results.filter((entry): entry is Attachment => entry !== null);
   return { attachments, dropped: files.length - attachments.length };

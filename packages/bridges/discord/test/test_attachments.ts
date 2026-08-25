@@ -6,8 +6,10 @@ import {
   isDiscordCdnUrl,
   resolveMessageText,
   resolveMimeType,
+  base64Length,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENT_COUNT,
+  MAX_TOTAL_BASE64_CHARS,
   type DiscordAttachmentLike,
   type FetchFn,
 } from "../src/attachments.ts";
@@ -115,6 +117,21 @@ describe("downloadAttachment", () => {
     assert.equal(got, null);
   });
 
+  it("releases the connection when the declared length is over the cap", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchFn: FetchFn = async () => new Response(body, { headers: { "content-length": String(MAX_ATTACHMENT_BYTES + 1) } });
+    assert.equal(await downloadAttachment(file({ size: 10 }), { fetchFn, log: silentLog }), null);
+    assert.equal(cancelled, true, "an undrained body leaks the connection until it times out");
+  });
+
   it("returns null on a non-2xx response", async () => {
     const fetchFn = stubFetch(new Uint8Array([1]), { status: 404 });
     assert.equal(await downloadAttachment(file(), { fetchFn, log: silentLog }), null);
@@ -155,6 +172,39 @@ describe("collectAttachments", () => {
   it("returns an empty result for a message with no files", async () => {
     const fetchFn = stubFetch(new Uint8Array([1]));
     assert.deepEqual(await collectAttachments([], { fetchFn, log: silentLog }), { attachments: [], dropped: 0 });
+  });
+
+  // chat-service's parseAttachments stops at 20 MB of base64 and says
+  // nothing, so files past that would vanish without the user hearing.
+  it("stops at the base64 budget the server enforces, and counts the rest", async () => {
+    const fetchFn = stubFetch(new Uint8Array([1]));
+    const big = MAX_ATTACHMENT_BYTES; // 8 MB → ~10.7 MB of base64
+    const files = [file({ name: "a.png", size: big }), file({ name: "b.png", size: big }), file({ name: "c.png", size: big })];
+    const got = await collectAttachments(files, { fetchFn, log: silentLog });
+    assert.equal(base64Length(big) * 2 > MAX_TOTAL_BASE64_CHARS, true, "two of these must not fit — otherwise this test proves nothing");
+    assert.equal(got.attachments.length, 1);
+    assert.equal(got.dropped, 2);
+    assert.equal(fetchFn.calls.length, 1, "the files that cannot be sent are never downloaded");
+  });
+
+  it("keeps a small file that still fits after a big one was skipped", async () => {
+    const fetchFn = stubFetch(new Uint8Array([1]));
+    const files = [
+      file({ name: "big.png", size: MAX_ATTACHMENT_BYTES }),
+      file({ name: "huge.png", size: MAX_ATTACHMENT_BYTES }),
+      file({ name: "tiny.png", size: 10 }),
+    ];
+    const got = await collectAttachments(files, { fetchFn, log: silentLog });
+    assert.equal(got.attachments.length, 2, "big + tiny fit; huge does not");
+    assert.equal(got.dropped, 1);
+  });
+});
+
+describe("base64Length", () => {
+  it("matches what Buffer.toString('base64') actually produces", () => {
+    [0, 1, 2, 3, 4, 5, 6, 100, 1023, 4096].forEach((size) => {
+      assert.equal(base64Length(size), Buffer.alloc(size).toString("base64").length, `size ${size}`);
+    });
   });
 });
 
