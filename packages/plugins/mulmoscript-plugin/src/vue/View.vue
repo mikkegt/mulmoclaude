@@ -88,7 +88,7 @@
 
          No `layout` prop: the editor lays itself out from its own width, so the pane
          moves below the list on a narrow host (this card) rather than beside it. -->
-    <div v-if="isDeck" class="flex-1 overflow-hidden" data-testid="mulmo-script-deck-editor">
+    <div v-if="isDeck" class="flex-1 overflow-hidden" data-testid="mulmo-script-deck-editor" @focusout="onDeckFocusOut">
       <BeatListEditor :beats="deckBeats" @update:beats="onDeckBeatsUpdate" />
     </div>
 
@@ -363,6 +363,7 @@ import {
   scriptSourceText as toScriptSourceText,
   resolveSilentAdvanceSeconds,
   clearReactiveRecords,
+  focusLeftContainer,
   type Beat,
 } from "./helpers";
 import { beatsOf, withBeats, type EditableBeat } from "@mulmocast/beat-editor";
@@ -720,6 +721,20 @@ const deckBeats = computed<EditableBeat[]>(() => beatsOf(deckScriptInput.value))
 
 function onDeckBeatsUpdate(beats: EditableBeat[]): void {
   onDeckUpdate(withBeats(deckScriptInput.value, beats));
+}
+
+/**
+ * Leaving the editor writes whatever is still in the debounce.
+ *
+ * Asking the agent to change the script means moving focus out of here first, so this lands
+ * ahead of every request without the host having to announce one — MulmoTerminal's agent is a
+ * terminal, and there is no "sent" event to hook. The debounce is short enough that it has
+ * usually fired already; this closes the case where it has not, which would otherwise have the
+ * agent read a file missing the last thing the user typed.
+ */
+function onDeckFocusOut(event: FocusEvent): void {
+  const container = event.currentTarget instanceof Node ? event.currentTarget : null;
+  if (focusLeftContainer(container, event.relatedTarget)) flushPendingDeckSave();
 }
 
 onBeforeUnmount(() => {
