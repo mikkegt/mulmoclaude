@@ -246,8 +246,8 @@ describe("executeMulmoScriptSave — replacing one beat", () => {
 
     assert.equal(out.ok, true, JSON.stringify(out));
     const after = beatsIn(store, filePath);
-    assert.equal(after[0].text, "Rewritten.");
     assert.equal(after.length, before.length, "replacing must not add or drop a beat");
+    assert.equal(after[0]?.text, "Rewritten.");
   });
 
   it("answers with the whole script, so the canvas can show the result", async () => {
