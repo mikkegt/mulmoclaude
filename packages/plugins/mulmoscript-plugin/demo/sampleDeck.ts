@@ -45,5 +45,11 @@ export const sampleDeck = {
       text: "Closing",
       image: { type: "slide", slide: { layout: "bigQuote", quote: "Design is not just what it looks like", author: "Steve Jobs" } },
     },
+    // A non-slide beat: the editor used to refuse a script containing one, so the whole thing
+    // fell through to a read-only list. Kept here so the demo covers the mixed case.
+    {
+      text: "And a markdown beat",
+      image: { type: "markdown", markdown: "## Markdown too\n\n- edited in place\n- not just decks" },
+    },
   ],
 };
