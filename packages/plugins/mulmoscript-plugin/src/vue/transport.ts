@@ -10,8 +10,8 @@
 // failure shape.
 
 import { useRuntime } from "gui-chat-protocol/vue";
-import type { MulmoScriptDispatchArgs, MulmoScriptDispatchResult, MulmoScriptGenerationEvent } from "../core/contract";
-import { GENERATION_EVENT } from "../core/contract";
+import type { MulmoScriptChangedEvent, MulmoScriptDispatchArgs, MulmoScriptDispatchResult, MulmoScriptGenerationEvent } from "../core/contract";
+import { GENERATION_EVENT, SCRIPT_CHANGED_EVENT, shouldReloadForScriptChange } from "../core/contract";
 import { errorMessage } from "@mulmoclaude/common";
 import { isRecord } from "./support";
 
@@ -20,6 +20,13 @@ export type TransportResult<T> = { ok: true; data: T } | { ok: false; error: str
 type ArgsFor<K extends MulmoScriptDispatchArgs["kind"]> = Omit<Extract<MulmoScriptDispatchArgs, { kind: K }>, "kind">;
 
 const GENERATION_EVENT_KINDS: ReadonlySet<string> = new Set(["beatImage", "beatAudio", "characterImage", "movie", "pdf"]);
+
+function parseScriptChangedEvent(payload: unknown): MulmoScriptChangedEvent | null {
+  if (!isRecord(payload)) return null;
+  const { filePath, origin } = payload;
+  if (typeof filePath !== "string") return null;
+  return { filePath, ...(typeof origin === "string" ? { origin } : {}) };
+}
 
 function parseGenerationEvent(payload: unknown): MulmoScriptGenerationEvent | null {
   if (!isRecord(payload)) return null;
@@ -40,6 +47,9 @@ export interface MulmoScriptTransport {
   /** Subscribe to the host's generation channel, pre-filtered to one
    *  script's wire path. Returns the unsubscribe function. */
   onGenerationEvent(filePath: () => string, handler: (event: MulmoScriptGenerationEvent) => void): () => void;
+  /** Subscribe to writes of one script, skipping the echo of this View's own
+   *  (`ownOrigin`). Returns the unsubscribe function. */
+  onScriptChanged(filePath: () => string, ownOrigin: string, handler: () => void): () => void;
 }
 
 export function useMulmoScriptTransport(): MulmoScriptTransport {
@@ -69,5 +79,21 @@ export function useMulmoScriptTransport(): MulmoScriptTransport {
     });
   }
 
-  return { call, onGenerationEvent };
+  /**
+   * A write to this script landed — reload from disk.
+   *
+   * `ownOrigin` is this View's id. Its own writes echo back on the same channel, and acting
+   * on them would rebuild the element the caret is in on every keystroke, so they are dropped
+   * here. A write from the agent carries no origin and always reaches the handler.
+   */
+  function onScriptChanged(filePath: () => string, ownOrigin: string, handler: () => void): () => void {
+    return runtime.pubsub.subscribe(SCRIPT_CHANGED_EVENT, (payload: unknown) => {
+      const event = parseScriptChangedEvent(payload);
+      if (!event) return;
+      if (!shouldReloadForScriptChange(event, filePath(), ownOrigin)) return;
+      handler();
+    });
+  }
+
+  return { call, onGenerationEvent, onScriptChanged };
 }
