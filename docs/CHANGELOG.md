@@ -8,6 +8,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+### Fixed
+
+#### Attachments over 1 MB never reached the server — every bridge (#2956)
+
+`attachChatSocket` never set `maxHttpBufferSize`, so Socket.IO's 1,000,000-byte default
+applied. Base64 inflates a payload by 4/3, so any attachment over roughly 730 KB of raw bytes
+closed the connection before the server could validate it or return an ack — well short of the
+20 MB base64 budget `parseAttachments` enforces, which was therefore unreachable. The bridge
+saw `timeout: socket has been disconnected`; the user saw no reply at all.
+
+Measured against the real socket: 700 KiB relayed, **900 KiB closed the connection**. After
+the fix, 15 MiB (exactly the 20 MB base64 budget) relays and nothing under it disconnects.
+The frame limit is now the attachment budget plus 4 MB of headroom, so `parseAttachments`
+— still 10 attachments and 20 MB — is the gate a bridge actually hits. The socket is
+authenticated at handshake and loopback-only.
+
+This affected Discord, Telegram, LINE and Mastodon alike. Phone photos and screenshots are
+routinely over 1 MB, so most of them were being dropped. Released as
+`@mulmobridge/chat-service@1.1.0`.
+
+#### Discord attachments were never forwarded (#2939)
+
+The bridge did not read `msg.attachments`, and an `if (!text) return;` discarded image-only
+posts before anything else ran — pasting a screenshot did nothing. The wire protocol had
+carried attachments since #382; Discord was the one bridge not connected to it.
+
+Files are now downloaded from Discord's CDN (host-restricted, so a tampered gateway payload
+cannot become an SSRF primitive) and forwarded, with a post carrying only files sent under
+`Describe / analyze this file.` — chat-service rejects an empty `text`, which is why the
+failure was silent. Caps mirror what the server accepts: 8 MB per file and 20 MB of base64
+per message, spent against Discord's declared sizes before download and re-checked against
+the bytes in hand afterwards, so nothing is truncated server-side without the user being told.
+Released as `@mulmobridge/discord@1.1.0`.
+
+#### Mastodon image-only DMs carried the bot's handle as the prompt (#2952)
+
+`stripLeadingMentions` required trailing whitespace, so a mention that ended the body survived:
+a DM of `@bot` plus an image reached the agent with `"@bot"` as its instruction. A reply
+carrying media with a genuinely empty body was rejected by `text is required` and lost the
+image outright. Fixing the strip alone would have moved the first case into the second, so the
+placeholder shipped with it.
+
+`collectImageAttachments` also had no total-size check — four images at the 8 MB cap is about
+42 MB of base64, past both the server budget and the socket frame. Images are now trimmed to
+what one message can carry, with the remainder noted in the body.
+
+Behaviour change: a bare `@bot` mention carrying neither text nor images is now ignored, where
+it previously reached the agent as `"@bot"`. Released as `@mulmobridge/mastodon@1.1.0`.
+
+### Released 2026-08-25
+
+- `@mulmobridge/chat-service@1.1.0`
+- `@mulmobridge/discord@1.1.0`
+- `@mulmobridge/mastodon@1.1.0`
+
+
 ### Added
 
 #### Leaving the deck editor writes the pending edit (#2949)
