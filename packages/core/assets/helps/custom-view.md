@@ -63,6 +63,8 @@ window.__MC_VIEW = {
   token: "<scoped capability token>", // Authorization bearer
   dataUrl: "http://localhost:3001/api/collections/annual-plan/view-data",
   onChange: (cb) => unsubscribe, // live refresh — see "Staying live" below
+  searchQuery: "", // live text in the app's own search box — see "One search box"
+  onSearchQueryChange: (cb) => unsubscribe, // fires when the user types there
   openItem: (id, mode) => void, // open a record in the host's panel — see "Opening a record"
   startChat: (prompt, role) => void, // draft a new chat for the user — see "Starting a chat"
 };
@@ -298,6 +300,52 @@ What you need to know:
 - **No extra capability needed** — a read-only view can use `onChange`.
 - It returns an **unsubscribe** function; you rarely need it (the view is torn
   down with the iframe), but it's there for fine-grained control.
+
+### One search box — `searchQuery` / `onSearchQueryChange`
+
+The app's **standard search box stays on screen while your view renders**, so
+the user expects it to drive your view too. It does: the host relays what they
+type into the sandboxed frame.
+
+**Do not build a second search box.** Read the host's, and you get the
+behaviour the user already assumes.
+
+```js
+const v = window.__MC_VIEW;
+
+function render() {
+  const q = v.searchQuery.trim().toLowerCase();
+  const hits = q ? records.filter((r) => matches(r, q)) : records;
+  // …draw hits, highlight where each one matched…
+}
+
+v.onSearchQueryChange(render); // the user typed in the app's search box
+v.onChange(reload); // the data changed (a separate wire — see above)
+render();
+```
+
+What you need to know:
+
+- **`searchQuery` is always current.** It updates the instant the user types, so
+  reading it inside your own render (as above) is never a keystroke behind.
+- **The callback is debounced** — one call per typed word, not one per
+  keystroke — and receives the query as its argument
+  (`onSearchQueryChange((q) => …)`), so you can use either source.
+- **An empty string means the box is empty** — show everything, don't show
+  nothing. It fires on clearing too.
+- **It is scoped to this collection and this session.** Switching collections
+  clears the box; nothing is persisted.
+- **One direction only.** You read the user's query; you cannot write the app's
+  search box from view code. If your view needs a filter the box can't express
+  (a date range, a facet), add that control yourself and combine it with
+  `searchQuery`.
+- **No extra capability needed**, and it is **not** a data reload: it never
+  fires `onChange`, and `onChange` never fires this.
+
+This is what makes a "search" view worth writing — the built-in box only
+filters table rows, so a view that shows **which field matched**, with a
+highlighted snippet, is a real upgrade the user drives from the box they were
+already using.
 
 ### Opening a record — `openItem`
 

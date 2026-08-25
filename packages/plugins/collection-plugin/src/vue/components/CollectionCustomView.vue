@@ -25,6 +25,7 @@
       :srcdoc="srcdoc"
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads"
       class="w-full h-full border-0"
+      @load="seedSearchQuery"
     />
   </div>
 </template>
@@ -41,6 +42,9 @@ const { t } = useCollectionI18n();
 const props = defineProps<{
   slug: string;
   view: CollectionCustomView;
+  /** Live text in the host's STANDARD table search box, relayed into the
+   *  sandboxed view so a collection needs only one search box (#2959). */
+  searchQuery?: string;
 }>();
 
 const emit = defineEmits<{
@@ -171,6 +175,35 @@ watch(
     if (slug && subscribe) changeUnsub = subscribe(slug, relayChange);
   },
   { immediate: true },
+);
+
+// ── Host search box → view ──
+// The standard table's search box stays visible while a custom view renders, so
+// the user reasonably expects the one box to drive both (#2959). The iframe has
+// an opaque origin and cannot read the parent, so the host relays the text down
+// the same postMessage channel `relayChange` uses. Host → view only: the view
+// reacts to the query, it never writes it back.
+function postSearchQuery(query: string): void {
+  // `"*"` target is safe for the same reason as `relayChange`: no secret
+  // travels, and the iframe-side handler checks the sender is its parent and
+  // that the slug is its own.
+  iframeEl.value?.contentWindow?.postMessage({ type: "mc-search-query", slug: props.slug, query }, "*");
+}
+
+// A message posted before the injected bootstrap has parsed is dropped, and a
+// view switch / token re-mint builds a frame that was never told the current
+// query — so seed it on `load`. Empty is skipped: that is already the frame's
+// own initial state, and pushing it would fire every view's callback for
+// nothing.
+function seedSearchQuery(): void {
+  const query = props.searchQuery ?? "";
+  if (query) postSearchQuery(query);
+}
+
+// Clearing the box must reach the view too, so this one relays "" as well.
+watch(
+  () => props.searchQuery,
+  (query) => postSearchQuery(query ?? ""),
 );
 
 // ── View → host action bridge ──
