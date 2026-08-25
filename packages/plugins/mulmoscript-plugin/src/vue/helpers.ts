@@ -94,8 +94,8 @@ export function isBeatImageReference(beat: { image?: { type?: string; [key: stri
 }
 
 /** Pure check: is every beat in the script a `slide`-typed beat?
- *  When true, the View mounts `@mulmocast/deck-web`'s
- *  `MulmoScriptDeckEditor` instead of the per-beat list UI (#1575).
+ *  When true, the View mounts `@mulmocast/beat-editor`'s
+ *  `BeatListEditor` instead of the per-beat list UI (#1575).
  *  Empty / missing `beats[]` returns false — there's nothing to edit
  *  as a deck, fall through to the existing UI which renders an empty
  *  state. Mixed scripts (any non-`slide` beat) also return false; that

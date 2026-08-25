@@ -2066,10 +2066,10 @@
   resolved "https://registry.yarnpkg.com/@mozilla/readability/-/readability-0.6.0.tgz#134e3ce3ff1676716e550de0b8de957bcc59208b"
   integrity sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ==
 
-"@mulmocast/deck-web@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@mulmocast/deck-web/-/deck-web-2.0.0.tgz#d5de0a69d15bbafcf0f4ac5cb268e6725a6c4cb8"
-  integrity sha512-d7eLR2IK5r75oS/naZddVENwQjR2B7rzlIYdGWfU0617W4RVxd7f2g2pL1X2NIWnNn36T7CwdgXncOPBI4rC0g==
+"@mulmocast/beat-editor@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@mulmocast/beat-editor/-/beat-editor-1.1.1.tgz#c849d796c6a6a7f8fef71aca95051947795fa2bb"
+  integrity sha512-soHUueTQIAUrVztgPVilvnUrClewAYeHExdL4ikeUzUiE5+wyO6qnKJ7DuLgj6u986aFCD/YxaunJ0gIK/2usw==
   dependencies:
     dompurify "^3.4.14"
 

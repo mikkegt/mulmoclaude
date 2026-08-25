@@ -1,5 +1,5 @@
 // #1575 — when every beat is a `slide`, the View swaps the per-beat list for
-// the interactive deck editor (@mulmocast/deck-web). Each editor emit fires
+// the interactive deck editor (@mulmocast/beat-editor). Each editor emit fires
 // `update:script`; this debounces them into one updateScript round-trip per
 // quiet stretch (300ms — short enough to feel live, long enough that typing in
 // the Inspector doesn't carpet-bomb the server).
