@@ -8,6 +8,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+### Changed
+
+#### The MulmoScript deck editor now runs on `@mulmocast/beat-editor` (#2945)
+
+`@mulmocast/deck-web` is deprecated as a rename, but the component the plugin used —
+`MulmoScriptDeckEditor` — was removed along with the iframe editor, so this is a swap rather
+than a rename. `BeatListEditor` takes and emits a beat array, and the script goes through
+`beatsOf` / `withBeats` on the way in and out; writing `{ ...script, beats }` by hand would drop
+`presentationStyle` and `slideParams` silently.
+
+The `layout="compact"` prop is gone: the editor lays itself out from its own width, so inside
+the plugin card the editing pane moves below the beat list instead of beside it.
+
+This also fixes a stylesheet gap that predates the migration. Nothing imported the editor's
+`style.css`, and Tailwind only scans the package it is building, so the deck editor had been
+rendering without `w-96`, `min-h-0`, `overflow-auto` or `border-r`. It is imported from the
+plugin now, which keeps it correct on any host rather than one that remembers to add an
+`@source`.
+
+`@mulmoclaude/mulmoscript-plugin` goes to **4.0.0** — the peer dependency change is breaking.
+
 ### Fixed
 
 #### Wiki pages named in Japanese could not be opened, and every link to one was reported broken (#2940)
@@ -353,7 +374,7 @@ translation behind it.
 
 ### Changed
 
-#### `@mulmoclaude/mulmoscript-plugin@3.1.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
+#### `@mulmoclaude/mulmoscript-plugin@4.0.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
 
 Released 2026-08-24. The plugin's peer declaration still read `^1.1.1` while both
 hosts had moved to deck-web 2.0.0, so every install printed
@@ -385,7 +406,7 @@ not on a run.
 
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@3.1.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.0.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 
