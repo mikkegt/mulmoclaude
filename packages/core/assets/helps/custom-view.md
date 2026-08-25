@@ -335,6 +335,11 @@ What you need to know:
   nothing. It fires on clearing too.
 - **It is scoped to this collection and this session.** Switching collections
   clears the box; nothing is persisted.
+- **Navigating your frame away ends it.** The query arrives on a private
+  channel bound to the document the host built. If your view sets
+  `location = …`, the replacement page gets no further queries — deliberately,
+  since the text is the user's own. Open outbound links with
+  `target="_blank"` (see the sandbox rules) and your view keeps running.
 - **One direction only.** You read the user's query; you cannot write the app's
   search box from view code. If your view needs a filter the box can't express
   (a date range, a facet), add that control yourself and combine it with

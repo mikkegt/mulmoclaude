@@ -28,10 +28,13 @@ const DETAIL = {
 };
 
 // Renders whatever the host relays, and counts callbacks so the debounce is
-// observable (a per-keystroke relay would push the count past 1).
+// observable (a per-keystroke relay would push the count past 1). `#go`
+// navigates the frame away — a custom view is allowed to do that, and the
+// search relay must not follow it (see the navigation test below).
 const VIEW_HTML = `<!doctype html><html><head></head><body>
 <div id="query">unset</div>
 <div id="calls">0</div>
+<button id="go" type="button">leave</button>
 <script>
   var view = window.__MC_VIEW;
   var calls = 0;
@@ -44,8 +47,37 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
     document.getElementById('calls').textContent = String(calls);
     paint(query);
   });
+  document.getElementById('go').addEventListener('click', function () {
+    location.href = '/e2e-elsewhere.html';
+  });
 </script>
 </body></html>`;
+
+// Stands in for whatever a navigated-away view lands on. It APPENDS every
+// message it catches — accumulating, not replacing, so a leak stays visible
+// even after a later message arrives.
+const ELSEWHERE_HTML = `<!doctype html><html><head></head><body>
+<div id="marker">elsewhere</div>
+<div id="caught"></div>
+<script>
+  window.addEventListener('message', function (event) {
+    document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
+  });
+</script>
+</body></html>`;
+
+// Posted into the frame AFTER the search text would have been relayed. Messages
+// to one window are delivered in order, so once the probe shows up, anything
+// the host sent earlier has shown up too — which turns "nothing leaked" into a
+// synchronisation on an observable condition instead of a blind wait.
+const PROBE = "probe-after-search";
+
+async function postProbe(page: Page) {
+  await page.evaluate((probe) => {
+    const frame = document.querySelector('[data-testid="collection-custom-view-iframe"]');
+    if (frame instanceof HTMLIFrameElement) frame.contentWindow?.postMessage({ probe }, "*");
+  }, PROBE);
+}
 
 async function setup(page: Page) {
   await mockAllApis(page);
@@ -60,6 +92,10 @@ async function setup(page: Page) {
   await page.route(
     (url) => url.pathname === "/api/collections/news/view-file",
     (route) => route.fulfill({ contentType: "text/html", body: VIEW_HTML }),
+  );
+  await page.route(
+    (url) => url.pathname === "/e2e-elsewhere.html",
+    (route) => route.fulfill({ contentType: "text/html", body: ELSEWHERE_HTML }),
   );
 }
 
@@ -90,6 +126,29 @@ test.describe("standard search box → custom view", () => {
     await page.getByPlaceholder("Search records…").fill("kafka");
     await page.getByTestId("collection-view-custom-search").click();
     await expect(viewFrame(page).locator("#query")).toHaveText("kafka");
+  });
+
+  test("stops relaying once the view navigates its own frame away", async ({ page }) => {
+    // A custom view may navigate itself — nothing in the sandbox or the CSP
+    // prevents `location = …`. The user's typed text must not follow it into
+    // whatever document lands there (#2963 review: Codex + CodeRabbit).
+    await setup(page);
+    await page.goto("/collections/news");
+    await page.getByTestId("collection-view-custom-search").click();
+    await page.getByPlaceholder("Search records…").fill("alpha");
+    await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
+
+    await viewFrame(page).locator("#go").click();
+    await expect(viewFrame(page).locator("#marker")).toHaveText("elsewhere");
+
+    // Type again. The replacement document must never see it.
+    await page.getByPlaceholder("Search records…").fill("secret-term");
+    await expect(page.getByPlaceholder("Search records…")).toHaveValue("secret-term");
+
+    await postProbe(page);
+    // The probe arrived, so any earlier relay would have arrived before it.
+    await expect(viewFrame(page).locator("#caught")).toContainText(PROBE);
+    await expect(viewFrame(page).locator("#caught")).not.toContainText("secret-term");
   });
 
   test("hides the host's match count while a custom view is active", async ({ page }) => {

@@ -47,14 +47,22 @@ const SEARCH_QUERY_DEBOUNCE_MS = 150;
  *    user reviews / edits / sends (or clears) it, so the view's code can only
  *    propose text; no capability is required. `role` is optional and validated
  *    host-side (falls back to the general role). Sent to `v.origin`, no secret.
- *  - `searchQuery` / `onSearchQueryChange(cb)`: the host relays a
- *    `{ type: "mc-search-query", slug, query }` message whenever the STANDARD
- *    table view's search box changes (and once on iframe load when it already
- *    holds text), so a custom view can react to the one search box the user
- *    already sees instead of shipping a second one (#2959). Same validation as
- *    `onChange` (from the parent, for THIS collection); `v.searchQuery` is
- *    updated synchronously and callbacks are debounced, receiving the query as
- *    their argument. Host → view only: the view cannot write the host's box.
+ *  - `searchQuery` / `onSearchQueryChange(cb)`: the host relays the STANDARD
+ *    table view's search text so a custom view can react to the one search box
+ *    the user already sees instead of shipping a second one (#2959).
+ *    `v.searchQuery` updates synchronously; callbacks are debounced and receive
+ *    the query. Host → view only — the view cannot write the host's box.
+ *
+ *    It travels over a **MessageChannel port**, not `postMessage` on the
+ *    window: the bootstrap creates the channel, keeps `port1` and hands `port2`
+ *    up with an `mc-view-ready` ping. A window post has to name a target
+ *    origin, and this frame's origin is opaque — so the only usable target is
+ *    `"*"`, which keeps delivering after the view navigates ITSELF away
+ *    (nothing in the sandbox or CSP stops `location = "https://elsewhere"`),
+ *    handing the user's typed text to whatever document replaced it. A port is
+ *    bound to the document that received it, so navigation severs the channel
+ *    on its own. This bootstrap runs before any of the view's own scripts, so
+ *    the real view always claims the generation's single port first.
  *  - CSP-violation reporter: a `securitypolicyviolation` listener posts a
  *    `{ type: "mc-csp-violation", slug, blockedURI, violatedDirective }` ping
  *    to the host (#1989) so a blocked resource (e.g. a Google Maps embed the
@@ -83,7 +91,7 @@ function viewBridgeBootstrap(): string {
   // shipping the full vue-i18n runtime into every sandboxed iframe (~50KB)
   // would dominate the page weight. Authors who need plurals can pre-pick
   // per-count keys client-side.
-  return `(function(){var v=window.__MC_VIEW,cbs=[],t,qcbs=[],qt;function fire(){t=undefined;cbs.slice().forEach(function(cb){try{cb()}catch(e){}});}function fireQuery(){qt=undefined;var q=v.searchQuery;qcbs.slice().forEach(function(cb){try{cb(q)}catch(e){}});}window.addEventListener('message',function(e){if(e.source!==window.parent)return;var d=e.data;if(!d||d.slug!==v.slug)return;if(d.type==='mc-collection-changed'){if(t)clearTimeout(t);t=setTimeout(fire,${ONCHANGE_DEBOUNCE_MS});}else if(d.type==='mc-search-query'){v.searchQuery=typeof d.query==='string'?d.query:'';if(qt)clearTimeout(qt);qt=setTimeout(fireQuery,${SEARCH_QUERY_DEBOUNCE_MS});}});v.onChange=function(cb){if(typeof cb!=='function')return function(){};cbs.push(cb);return function(){var i=cbs.indexOf(cb);if(i>=0)cbs.splice(i,1);};};v.onSearchQueryChange=function(cb){if(typeof cb!=='function')return function(){};qcbs.push(cb);return function(){var i=qcbs.indexOf(cb);if(i>=0)qcbs.splice(i,1);};};v.openItem=function(id,mode){window.parent.postMessage({type:'mc-open-item',slug:v.slug,id:String(id),mode:mode==='edit'?'edit':'view'},v.origin);};v.startChat=function(prompt,role){window.parent.postMessage({type:'mc-start-chat',slug:v.slug,prompt:String(prompt),role:typeof role==='string'?role:undefined},v.origin);};v.dict=v.dict||{};v.t=function(key,named){var s=v.dict[key];if(typeof s!=='string')return typeof key==='string'?key:String(key);if(!named||typeof named!=='object')return s;return s.replace(/\\{(\\w+)\\}/g,function(m,n){var x=named[n];return x==null?m:String(x);});};document.addEventListener('securitypolicyviolation',function(e){window.parent.postMessage({type:'mc-csp-violation',slug:v.slug,nonce:v.cspNonce,blockedURI:e.blockedURI,violatedDirective:e.violatedDirective,effectiveDirective:e.effectiveDirective},v.origin);});})();`;
+  return `(function(){var v=window.__MC_VIEW,cbs=[],t,qcbs=[],qt;function fire(){t=undefined;cbs.slice().forEach(function(cb){try{cb()}catch(e){}});}function fireQuery(){qt=undefined;var q=v.searchQuery;qcbs.slice().forEach(function(cb){try{cb(q)}catch(e){}});}window.addEventListener('message',function(e){if(e.source!==window.parent)return;var d=e.data;if(!d||d.type!=='mc-collection-changed'||d.slug!==v.slug)return;if(t)clearTimeout(t);t=setTimeout(fire,${ONCHANGE_DEBOUNCE_MS});});var qch=new MessageChannel();qch.port1.onmessage=function(e){var d=e.data;if(!d||d.type!=='mc-search-query')return;v.searchQuery=typeof d.query==='string'?d.query:'';if(qt)clearTimeout(qt);qt=setTimeout(fireQuery,${SEARCH_QUERY_DEBOUNCE_MS});};window.parent.postMessage({type:'mc-view-ready',slug:v.slug},v.origin,[qch.port2]);v.onChange=function(cb){if(typeof cb!=='function')return function(){};cbs.push(cb);return function(){var i=cbs.indexOf(cb);if(i>=0)cbs.splice(i,1);};};v.onSearchQueryChange=function(cb){if(typeof cb!=='function')return function(){};qcbs.push(cb);return function(){var i=qcbs.indexOf(cb);if(i>=0)qcbs.splice(i,1);};};v.openItem=function(id,mode){window.parent.postMessage({type:'mc-open-item',slug:v.slug,id:String(id),mode:mode==='edit'?'edit':'view'},v.origin);};v.startChat=function(prompt,role){window.parent.postMessage({type:'mc-start-chat',slug:v.slug,prompt:String(prompt),role:typeof role==='string'?role:undefined},v.origin);};v.dict=v.dict||{};v.t=function(key,named){var s=v.dict[key];if(typeof s!=='string')return typeof key==='string'?key:String(key);if(!named||typeof named!=='object')return s;return s.replace(/\\{(\\w+)\\}/g,function(m,n){var x=named[n];return x==null?m:String(x);});};document.addEventListener('securitypolicyviolation',function(e){window.parent.postMessage({type:'mc-csp-violation',slug:v.slug,nonce:v.cspNonce,blockedURI:e.blockedURI,violatedDirective:e.violatedDirective,effectiveDirective:e.effectiveDirective},v.origin);});})();`;
 }
 
 export interface CustomViewBootstrap {

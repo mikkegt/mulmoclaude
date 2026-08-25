@@ -25,7 +25,6 @@
       :srcdoc="srcdoc"
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads"
       class="w-full h-full border-0"
-      @load="seedSearchQuery"
     />
   </div>
 </template>
@@ -61,6 +60,17 @@ const error = ref<string | null>(null);
 const srcdoc = ref<string | null>(null);
 const iframeEl = ref<HTMLIFrameElement | null>(null);
 
+// The live search channel into the current frame (see "Host search box → view"
+// below). Declared up here because `load()` closes it, and the watch that calls
+// `load()` runs during setup — a `let` declared further down would still be in
+// its temporal dead zone.
+let searchPort: MessagePort | null = null;
+
+function closeSearchPort(): void {
+  searchPort?.close();
+  searchPort = null;
+}
+
 // Resolved once in setup: inside a chat card this is the card's project-scoped
 // binding, elsewhere the global one. Captured here because the loads below run
 // outside setup, where the scope can no longer be injected.
@@ -95,6 +105,7 @@ let loadSeq = 0;
 
 async function load(): Promise<void> {
   clearRefresh();
+  closeSearchPort(); // the frame this port belonged to is being replaced
   const seq = ++loadSeq;
   const stale = (): boolean => seq !== loadSeq;
   loading.value = true;
@@ -180,22 +191,31 @@ watch(
 // ── Host search box → view ──
 // The standard table's search box stays visible while a custom view renders, so
 // the user reasonably expects the one box to drive both (#2959). The iframe has
-// an opaque origin and cannot read the parent, so the host relays the text down
-// the same postMessage channel `relayChange` uses. Host → view only: the view
-// reacts to the query, it never writes it back.
+// an opaque origin and cannot read the parent, so the host pushes the text in.
+// Host → view only: the view reacts to the query, it never writes it back.
+//
+// Over a MessageChannel port rather than `contentWindow.postMessage`, because
+// the query is the user's own typed text. A window post must name a target
+// origin, and an opaque origin can only be addressed as `"*"` — which keeps
+// delivering after the view navigates ITSELF elsewhere (nothing stops
+// `location = "https://elsewhere"`), handing the replacement document every
+// later keystroke. A port belongs to the document that received it, so that
+// navigation severs the channel instead. `relayChange` above stays on `"*"`:
+// its payload is a bare refetch ping whose slug the view already knows.
 function postSearchQuery(query: string): void {
-  // `"*"` target is safe for the same reason as `relayChange`: no secret
-  // travels, and the iframe-side handler checks the sender is its parent and
-  // that the slug is its own.
-  iframeEl.value?.contentWindow?.postMessage({ type: "mc-search-query", slug: props.slug, query }, "*");
+  searchPort?.postMessage({ type: "mc-search-query", slug: props.slug, query });
 }
 
-// A message posted before the injected bootstrap has parsed is dropped, and a
-// view switch / token re-mint builds a frame that was never told the current
-// query — so seed it on `load`. Empty is skipped: that is already the frame's
-// own initial state, and pushing it would fire every view's callback for
-// nothing.
-function seedSearchQuery(): void {
+// The bootstrap hands its port up as soon as it runs — before any of the view's
+// own scripts, so the real view always claims this frame's single port. Ignore
+// any later claim: after a navigation the replacement document is still
+// `contentWindow`, and would otherwise be able to ask for the channel back.
+function acceptSearchPort(port: MessagePort | undefined): void {
+  if (!port || searchPort) return;
+  searchPort = port;
+  // Seed a frame that was built after the user had already typed (a view
+  // switch, or the token re-mint). Empty is skipped — it is the frame's own
+  // initial state, so pushing it would fire every view's callback for nothing.
   const query = props.searchQuery ?? "";
   if (query) postSearchQuery(query);
 }
@@ -229,7 +249,8 @@ function onWindowMessage(event: MessageEvent): void {
   if (typeof msg !== "object" || msg === null) return;
   if (!("slug" in msg) || msg.slug !== props.slug) return;
   const type = "type" in msg ? msg.type : undefined;
-  if (type === "mc-open-item") handleOpenItem({ id: "id" in msg ? msg.id : undefined, mode: "mode" in msg ? msg.mode : undefined });
+  if (type === "mc-view-ready") acceptSearchPort(event.ports[0]);
+  else if (type === "mc-open-item") handleOpenItem({ id: "id" in msg ? msg.id : undefined, mode: "mode" in msg ? msg.mode : undefined });
   else if (type === "mc-start-chat") handleStartChat({ prompt: "prompt" in msg ? msg.prompt : undefined, role: "role" in msg ? msg.role : undefined });
 }
 
@@ -237,6 +258,7 @@ onMounted(() => window.addEventListener("message", onWindowMessage));
 
 onBeforeUnmount(() => {
   clearRefresh();
+  closeSearchPort();
   changeUnsub?.();
   changeUnsub = null;
   window.removeEventListener("message", onWindowMessage);
