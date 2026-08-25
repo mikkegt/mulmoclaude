@@ -34,6 +34,7 @@
     "access": "public"
   },
   "scripts": {
+    "predev": "vite build",
     "dev": "vite",
     "build": "vite build && vue-tsc -p tsconfig.build.json --emitDeclarationOnly",
     "prepack": "vite build && vue-tsc -p tsconfig.build.json --emitDeclarationOnly",

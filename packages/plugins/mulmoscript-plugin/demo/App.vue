@@ -21,7 +21,10 @@ import ShadowFrame from "./ShadowFrame.vue";
 // source one. `src/style.css` is `@import "tailwindcss"` and carries no utilities until
 // Vite compiles it, so injecting that put the editor in a shadow root with no rules at all:
 // the container query never applied, the pane took 498px of 589px, and the slide preview
-// was clipped to 91px. Run `yarn build` before `yarn dev` when the styles change.
+// was clipped to 91px.
+//
+// `dist/` is gitignored, so `predev` builds it first — without that a fresh clone answers
+// 500 for this import, measured.
 import pluginCss from "../dist/style.css?inline";
 
 // The transport hands the WHOLE envelope back as `data` (`transport.ts` returns
