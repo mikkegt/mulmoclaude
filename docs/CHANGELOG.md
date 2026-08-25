@@ -8,6 +8,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+### Added
+
+#### An agent's edit to a MulmoScript now appears in an open canvas (#2949)
+
+The preview only updated when the person in front of it typed. An agent writing the same
+script left the canvas showing the old file until it was reopened — the plugin's pubsub
+channel carries image / audio / movie generation, and nothing carried the script itself.
+
+`updateScript` / `updateBeat` now broadcast after the write lands, and an open View reloads
+from disk. Every write carries an `origin`, and a View ignores the echo of its own: without
+that, a save would come back and rebuild the element the caret is in on every keystroke.
+
+This is the first half of "a human and an agent taking turns on the same script". Flushing the
+editor's pending keystrokes when a request is sent to the agent, and locking the editor while
+the agent works, are still to come.
+
 ### Changed
 
 #### The MulmoScript deck editor now runs on `@mulmocast/beat-editor` (#2945)
@@ -374,7 +390,7 @@ translation behind it.
 
 ### Changed
 
-#### `@mulmoclaude/mulmoscript-plugin@4.0.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
+#### `@mulmoclaude/mulmoscript-plugin@4.1.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
 
 Released 2026-08-24. The plugin's peer declaration still read `^1.1.1` while both
 hosts had moved to deck-web 2.0.0, so every install printed
@@ -406,7 +422,7 @@ not on a run.
 
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.0.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.3.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.1.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 
