@@ -7,7 +7,7 @@
 // collapsed to "every day at 00:00" while the UI kept showing the real,
 // epoch-anchored next run (#2937).
 
-import { SCHEDULE_TYPES, isDueAt, parseTimeToMs, type TaskSchedule as LibrarySchedule } from "@receptron/task-scheduler";
+import { SCHEDULE_TYPES, isDueAt, nextWindowAfter, parseTimeToMs, type TaskSchedule as LibrarySchedule } from "@receptron/task-scheduler";
 
 const ONE_SECOND_MS = 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * ONE_SECOND_MS;
@@ -50,6 +50,21 @@ export function toLibrarySchedule(schedule: TaskSchedule): LibrarySchedule {
 export function isScheduleDueAt(schedule: TaskSchedule, nowMs: number, tickMs: number): boolean {
   if (unfireableScheduleReason(schedule) !== null) return false;
   return isDueAt(toLibrarySchedule(schedule), nowMs, tickMs);
+}
+
+/** The most recent window at or before `nowMs`, or null when the schedule has
+ *  none. `nextWindowAfter` only ever looks FORWARD, so asking it from
+ *  `nowMs - one period` answers the previous window whenever `nowMs` sits
+ *  exactly on a boundary, and a daily schedule read after its minute answers
+ *  TOMORROW. Both schedule kinds have a fixed period, so stepping one period
+ *  back off the next window is exact. */
+export function latestWindowAtOrBefore(schedule: TaskSchedule, nowMs: number): number | null {
+  if (unfireableScheduleReason(schedule) !== null) return null;
+  const next = nextWindowAfter(toLibrarySchedule(schedule), nowMs);
+  if (next === null || !Number.isFinite(next)) return null;
+  if (next <= nowMs) return next;
+  const periodMs = schedule.type === SCHEDULE_TYPES.interval ? schedule.intervalMs : ONE_DAY_MS;
+  return next - periodMs;
 }
 
 /** Name the field that makes a schedule unfireable, or null when it is fine.

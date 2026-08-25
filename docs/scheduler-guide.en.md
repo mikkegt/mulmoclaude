@@ -128,7 +128,8 @@ interval 168h   → Every 168 hours (7 days)
 
 > **Note:** Firing times are anchored to the epoch (1970-01-01 00:00 UTC) in `interval` steps,
 > not to the moment you registered the task. `interval 168h`, for instance, fires every Thursday
-> at 00:00 UTC (the epoch was a Thursday). Use `daily HH:MM` when the time of day matters.
+> at 00:00 UTC (the epoch was a Thursday). Use `daily HH:MM` when the time of day matters — it
+> fires every day at that time. Picking a day of the week is not supported.
 
 ---
 

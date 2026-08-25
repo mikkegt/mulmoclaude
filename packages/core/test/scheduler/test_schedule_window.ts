@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SCHEDULE_TYPES } from "@receptron/task-scheduler";
-import { toLibrarySchedule, isScheduleDueAt, unfireableScheduleReason, type TaskSchedule } from "../../src/scheduler/schedule-window.ts";
+import {
+  toLibrarySchedule,
+  isScheduleDueAt,
+  latestWindowAtOrBefore,
+  unfireableScheduleReason,
+  type TaskSchedule,
+} from "../../src/scheduler/schedule-window.ts";
 
 const ONE_SECOND_MS = 1000;
 const ONE_MINUTE_MS = 60 * ONE_SECOND_MS;
@@ -93,24 +99,26 @@ test("a daily schedule still fires once a day at its stated time", () => {
   assert.equal(fired[0], "2026-08-02T19:00:00.000Z");
 });
 
+const UNFIREABLE_SCHEDULES: TaskSchedule[] = [
+  { type: SCHEDULE_TYPES.daily, time: "not a time" },
+  { type: SCHEDULE_TYPES.daily, time: "" },
+  // Out of range, not merely odd: a library window for these lands on the NEXT
+  // day's midnight (`"24:00"`, `"23:60"`) or an hour before it (`"-1:00"`),
+  // which would turn an inert typo into a firing task.
+  { type: SCHEDULE_TYPES.daily, time: "24:00" },
+  { type: SCHEDULE_TYPES.daily, time: "23:60" },
+  { type: SCHEDULE_TYPES.daily, time: "25:00" },
+  { type: SCHEDULE_TYPES.daily, time: "-1:00" },
+  { type: SCHEDULE_TYPES.interval, intervalMs: 0 },
+  { type: SCHEDULE_TYPES.interval, intervalMs: -ONE_HOUR_MS },
+  { type: SCHEDULE_TYPES.interval, intervalMs: Number.NaN },
+  { type: SCHEDULE_TYPES.interval, intervalMs: Number.POSITIVE_INFINITY },
+];
+
 test("a schedule that can never fire is inert, and says which field is wrong", () => {
-  const unusable: TaskSchedule[] = [
-    { type: SCHEDULE_TYPES.daily, time: "not a time" },
-    { type: SCHEDULE_TYPES.daily, time: "" },
-    // Out of range, not merely odd: a library window for these lands on the
-    // NEXT day's midnight (`"24:00"`, `"23:60"`) or an hour before it
-    // (`"-1:00"`), which would turn an inert typo into a firing task.
-    { type: SCHEDULE_TYPES.daily, time: "24:00" },
-    { type: SCHEDULE_TYPES.daily, time: "23:60" },
-    { type: SCHEDULE_TYPES.daily, time: "25:00" },
-    { type: SCHEDULE_TYPES.daily, time: "-1:00" },
-    { type: SCHEDULE_TYPES.interval, intervalMs: 0 },
-    { type: SCHEDULE_TYPES.interval, intervalMs: -ONE_HOUR_MS },
-    { type: SCHEDULE_TYPES.interval, intervalMs: Number.NaN },
-    { type: SCHEDULE_TYPES.interval, intervalMs: Number.POSITIVE_INFINITY },
-  ];
-  unusable.forEach((schedule) => {
+  UNFIREABLE_SCHEDULES.forEach((schedule) => {
     assert.equal(sweepFireTimes(schedule).length, 0, `${JSON.stringify(schedule)} fired`);
+    assert.equal(latestWindowAtOrBefore(schedule, SWEEP_START_MS), null, `${JSON.stringify(schedule)} reported a window`);
     assert.notEqual(unfireableScheduleReason(schedule), null, `${JSON.stringify(schedule)} was not reported`);
   });
   assert.deepEqual(unfireableScheduleReason({ type: SCHEDULE_TYPES.interval, intervalMs: 0 }), { field: "intervalMs", value: "0" });
@@ -118,6 +126,28 @@ test("a schedule that can never fire is inert, and says which field is wrong", (
   assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.daily, time: "07:30" }), null);
   assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.daily, time: "23:59" }), null, "the last minute of the day is a real time");
   assert.equal(unfireableScheduleReason({ type: SCHEDULE_TYPES.interval, intervalMs: ONE_HOUR_MS }), null);
+});
+
+// What a run persists as `lastRunAt`. Asking `nextWindowAfter` from "now minus
+// one period" answered the PREVIOUS window when the clock sat exactly on a
+// boundary, and a daily schedule read one second late answered TOMORROW —
+// which the caller then discarded for the wall clock. Raised by CodeRabbit.
+test("the window a run belongs to is the latest one at or before the tick", () => {
+  const weekly: TaskSchedule = { type: SCHEDULE_TYPES.interval, intervalMs: 168 * ONE_HOUR_MS };
+  const windowMs = Date.UTC(2026, 7, 6); // an exact multiple of 168h from the epoch
+  assert.equal(latestWindowAtOrBefore(weekly, windowMs), windowMs, "a tick exactly on the window must report that window");
+  assert.equal(latestWindowAtOrBefore(weekly, windowMs + 250), windowMs, "a tick just after it belongs to the same window");
+  assert.equal(latestWindowAtOrBefore(weekly, windowMs - 1), windowMs - 168 * ONE_HOUR_MS, "a tick just before it belongs to the previous one");
+
+  const daily: TaskSchedule = { type: SCHEDULE_TYPES.daily, time: "19:00" };
+  const dailyWindowMs = Date.UTC(2026, 7, 2, 19, 0, 0);
+  assert.equal(latestWindowAtOrBefore(daily, dailyWindowMs), dailyWindowMs);
+  assert.equal(
+    latestWindowAtOrBefore(daily, dailyWindowMs + ONE_SECOND_MS),
+    dailyWindowMs,
+    "a run a second late still belongs to 19:00, not to the wall clock",
+  );
+  assert.equal(latestWindowAtOrBefore(daily, dailyWindowMs - ONE_SECOND_MS), dailyWindowMs - ONE_DAY_MS, "before today's window, the last one is yesterday's");
 });
 
 test("a tick that lands mid-window still fires exactly once per window", () => {

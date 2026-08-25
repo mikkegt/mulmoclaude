@@ -292,24 +292,35 @@ test("initScheduler registers system tasks with the task-manager and exposes the
 // those windows come back NaN, `listMissedWindows` fills to its cap, and the
 // first `new Date(NaN)` throws — so one bad task aborted startup for all of
 // them. Reported by Codex on #2955.
+/** Register `tasks` and hand back the run thunk the adapter gave the manager,
+ *  plus the ids it registered. */
+async function initAndCapture(tasks: SystemTaskDef[]): Promise<{ run: TaskDefinition["run"] | undefined; registered: string[] }> {
+  const registered: string[] = [];
+  const captured: { run?: TaskDefinition["run"] } = {};
+  const fakeTm = stubTm({
+    registerTask: (def: TaskDefinition) => {
+      registered.push(def.id);
+      captured.run = def.run;
+    },
+  });
+  await initScheduler(fakeTm, tasks);
+  return { run: captured.run, registered };
+}
+
+/** Seed `state.json` so catch-up has a `lastRunAt` to enumerate windows from. */
+async function seedState(root: string, state: Record<string, unknown>): Promise<void> {
+  await mkdir(path.join(root, "config", "scheduler"), { recursive: true });
+  await writeFile(path.join(root, "config", "scheduler", "state.json"), JSON.stringify(state));
+}
+
 test("a task with an unusable interval does not take startup down with it", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "sched-"));
   try {
     configure(root);
-    await mkdir(path.join(root, "config", "scheduler"), { recursive: true });
-    await writeFile(
-      path.join(root, "config", "scheduler", "state.json"),
-      JSON.stringify({ broken: { taskId: "broken", lastRunAt: new Date(Date.now() - 86_400_000).toISOString(), totalRuns: 1 } }),
-    );
+    await seedState(root, { broken: { taskId: "broken", lastRunAt: new Date(Date.now() - 86_400_000).toISOString(), totalRuns: 1 } });
 
     let ran = 0;
-    const registered: string[] = [];
-    const fakeTm = stubTm({
-      registerTask: (def: TaskDefinition) => {
-        registered.push(def.id);
-      },
-    });
-    const tasks: SystemTaskDef[] = [
+    const { registered } = await initAndCapture([
       {
         id: "broken",
         name: "Broken",
@@ -320,12 +331,40 @@ test("a task with an unusable interval does not take startup down with it", asyn
           ran++;
         },
       },
-    ];
+    ]);
 
-    await initScheduler(fakeTm, tasks);
     assert.equal(ran, 0, "an unfireable task must not be caught up");
     // Still registered: the task-manager is where the bad schedule is reported.
     assert.deepEqual(registered, ["broken"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// `lastRunAt` is what catch-up measures the next windows from, so it has to be
+// the WINDOW the run belongs to, not the wall clock it happened to start at. A
+// daily task read a second past its minute used to persist the wall clock.
+// Raised by CodeRabbit on #2955.
+test("a scheduled run persists the window it belongs to, not the wall clock", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sched-"));
+  try {
+    configure(root);
+    const { run: runThunk } = await initAndCapture([
+      {
+        id: "system:daily",
+        name: "Daily",
+        description: "d",
+        schedule: { type: SCHEDULE_TYPES.daily, time: "19:00" },
+        missedRunPolicy: MISSED_RUN_POLICIES.runOnce,
+        run: async () => {},
+      },
+    ]);
+    assert.ok(runThunk, "task-manager received a run thunk");
+
+    const windowMs = Date.UTC(2026, 7, 2, 19, 0, 0);
+    await runThunk({ taskId: "system:daily", now: new Date(windowMs + 1_500) });
+
+    assert.equal(getSchedulerTaskState("system:daily").lastRunAt, new Date(windowMs).toISOString());
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

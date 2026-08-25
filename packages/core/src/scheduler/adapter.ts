@@ -23,7 +23,6 @@ import {
   updateAndSave,
   appendLogEntry,
   queryLog,
-  SCHEDULE_TYPES,
   TASK_RESULTS,
   TASK_TRIGGERS,
   type MISSED_RUN_POLICIES,
@@ -32,10 +31,9 @@ import {
   type LogDeps,
 } from "@receptron/task-scheduler";
 import type { ITaskManager, TaskDefinition, SchedulerLogger } from "./task-manager.js";
-import { toLibrarySchedule, unfireableScheduleReason } from "./schedule-window.js";
+import { latestWindowAtOrBefore, toLibrarySchedule, unfireableScheduleReason } from "./schedule-window.js";
 import { errorMessage } from "../utils/errors.js";
 
-const ONE_SECOND_MS = 1000;
 const SCHEDULER_CONFIG_DIR = "config/scheduler";
 const SCHEDULER_DATA_DIR = "data/scheduler/logs";
 
@@ -147,8 +145,8 @@ export async function initScheduler(taskManager: ITaskManager, tasks: SystemTask
       id: task.id,
       description: task.description,
       schedule: task.schedule,
-      run: async () => {
-        const windowIso = computeCurrentWindow(task);
+      run: async (ctx) => {
+        const windowIso = computeCurrentWindow(task, ctx.now.getTime());
         await executeAndLog(task, windowIso, TASK_TRIGGERS.scheduled);
       },
     });
@@ -372,14 +370,12 @@ async function safeUpdateState(taskId: string, patch: Partial<TaskExecutionState
 /** Compute the window boundary that the current tick belongs to. For
  *  scheduled runs, this is the epoch-aligned window — not the wall-clock
  *  time of execution. This keeps lastRunAt consistent with catch-up's
- *  window-based accounting. */
-function computeCurrentWindow(task: SystemTaskDef): string {
-  const coreSchedule = toLibrarySchedule(task.schedule);
-  // The window that just fired is the latest one at or before now.
-  const nowMs = Date.now();
-  const windowMs = nextWindowAfter(coreSchedule, nowMs - (coreSchedule.type === SCHEDULE_TYPES.interval ? coreSchedule.intervalSec * ONE_SECOND_MS : 0));
-  const isRealWindow = windowMs !== null && Number.isFinite(windowMs) && windowMs <= nowMs;
-  return isRealWindow ? new Date(windowMs).toISOString() : new Date(nowMs).toISOString();
+ *  window-based accounting. `tickMs` is the tick's own clock, not
+ *  `Date.now()`: the two drift apart by however long the tick took to reach
+ *  this task, and under an injected clock they are unrelated. */
+function computeCurrentWindow(task: SystemTaskDef, tickMs: number): string {
+  const windowMs = latestWindowAtOrBefore(task.schedule, tickMs);
+  return windowMs !== null ? new Date(windowMs).toISOString() : new Date(tickMs).toISOString();
 }
 
 function computeNextScheduledFor(schedule: TaskDefinition["schedule"]): string | null {
