@@ -90,7 +90,7 @@ export async function executeMulmoScriptSave(
   args: SaveMulmoScriptArgs,
   now: Date = new Date(),
 ): Promise<SaveMulmoScriptOutcome> {
-  const { script, filename, filePath } = args ?? {};
+  const { script, filename, filePath, beatIndex, beat } = args ?? {};
   const hasScript = script !== undefined && script !== null;
   const hasFilePath = typeof filePath === "string" && filePath !== "";
   if (hasScript === hasFilePath) {
@@ -98,9 +98,21 @@ export async function executeMulmoScriptSave(
       hasScript ? "Provide either `script` or `filePath`, not both." : "Provide either `script` (new presentation) or `filePath` (existing presentation).",
     );
   }
-  return hasFilePath
-    ? loadExistingScript(context, filePath as string)
-    : saveNewScript(context, script, typeof filename === "string" ? filename : undefined, now);
+  if (!hasFilePath) return saveNewScript(context, script, typeof filename === "string" ? filename : undefined, now);
+
+  // `filePath` + `beatIndex` + `beat` replaces one beat before displaying, so revising a single
+  // slide does not mean re-sending a whole deck. Both halves are required together: an index
+  // with no replacement, or a replacement with no index, is a caller mistake worth reporting
+  // rather than silently ignoring — it would look like a successful edit that changed nothing.
+  const wantsBeatEdit = beatIndex !== undefined || beat !== undefined;
+  if (wantsBeatEdit) {
+    if (beatIndex === undefined || beat === undefined) {
+      return badRequest("`beatIndex` and `beat` go together — pass both to replace one beat, or neither to re-display.");
+    }
+    const updated = await executeUpdateBeat(context, { filePath, beatIndex, beat });
+    if (!updated.ok) return updated;
+  }
+  return loadExistingScript(context, filePath);
 }
 
 /** Resolve + guard a wire path for the update endpoints. */

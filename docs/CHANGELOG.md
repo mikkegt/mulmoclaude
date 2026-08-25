@@ -10,6 +10,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ### Added
 
+#### `presentMulmoScript` can revise one beat instead of resending the deck (#2949)
+
+`filePath` + `beatIndex` + `beat` replaces that one beat and presents the result. Asking the
+agent to change a single slide used to mean re-sending the whole script: expensive on a long
+deck, and it overwrites anything edited in the canvas meanwhile.
+
+`beatIndex` and `beat` are required together — an index with no replacement is reported rather
+than ignored, since ignoring it would look like a successful edit that changed nothing.
+
 #### Leaving the deck editor writes the pending edit (#2949)
 
 Asking the agent to change a script means moving focus out of the editor first — and in
@@ -425,7 +434,7 @@ translation behind it.
 
 ### Changed
 
-#### `@mulmoclaude/mulmoscript-plugin@4.2.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
+#### `@mulmoclaude/mulmoscript-plugin@4.3.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
 
 Released 2026-08-24. The plugin's peer declaration still read `^1.1.1` while both
 hosts had moved to deck-web 2.0.0, so every install printed
@@ -457,7 +466,7 @@ not on a run.
 
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.2.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.0`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.3.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 

@@ -222,3 +222,70 @@ describe("executeMulmoScript (ToolResult wrapper)", () => {
     assert.match(result.message ?? "", /Provide either/);
   });
 });
+
+describe("executeMulmoScriptSave — replacing one beat", () => {
+  /** A saved script, and the wire path a caller would have been handed for it. */
+  async function withSavedScript() {
+    const { context, store } = makeFakeContext();
+    const saved = await executeMulmoScriptSave(context, { script: VALID_SCRIPT }, NOW);
+    assert.equal(saved.ok, true);
+    return { context, store, filePath: (saved as { filePath: string }).filePath };
+  }
+
+  const beatsIn = (store: Map<string, string>, filePath: string) => {
+    const key = [...store.keys()].find((k) => k.endsWith(filePath.replace(/^stories\//, "stories/")));
+    return JSON.parse(store.get(key ?? "") ?? "{}").beats as { text?: string }[];
+  };
+
+  it("replaces the named beat and leaves the others alone", async () => {
+    const { context, store, filePath } = await withSavedScript();
+    const before = beatsIn(store, filePath);
+    assert.ok(before.length >= 1);
+
+    const out = await executeMulmoScriptSave(context, { filePath, beatIndex: 0, beat: { ...VALID_BEAT, text: "Rewritten." } }, NOW);
+
+    assert.equal(out.ok, true, JSON.stringify(out));
+    const after = beatsIn(store, filePath);
+    assert.equal(after[0].text, "Rewritten.");
+    assert.equal(after.length, before.length, "replacing must not add or drop a beat");
+  });
+
+  it("answers with the whole script, so the canvas can show the result", async () => {
+    const { context, filePath } = await withSavedScript();
+    const out = await executeMulmoScriptSave(context, { filePath, beatIndex: 0, beat: { ...VALID_BEAT, text: "Rewritten." } }, NOW);
+    assert.equal(out.ok, true);
+    // The View is driven by this payload; a bare `{ ok: true }` would leave it showing nothing.
+    assert.ok((out as { script?: unknown }).script, "the reply must carry the script");
+  });
+
+  it("refuses an index with no replacement, rather than silently displaying the old script", async () => {
+    // Reporting nothing here would read as a successful edit that changed nothing.
+    const { context, filePath } = await withSavedScript();
+    const out = await executeMulmoScriptSave(context, { filePath, beatIndex: 0 }, NOW);
+    assert.equal(out.ok, false);
+    assert.match((out as { error: string }).error, /go together/);
+  });
+
+  it("refuses a replacement with no index", async () => {
+    const { context, filePath } = await withSavedScript();
+    const out = await executeMulmoScriptSave(context, { filePath, beat: VALID_BEAT }, NOW);
+    assert.equal(out.ok, false);
+    assert.match((out as { error: string }).error, /go together/);
+  });
+
+  it("refuses an index past the end, and writes nothing", async () => {
+    const { context, store, filePath } = await withSavedScript();
+    const before = JSON.stringify(beatsIn(store, filePath));
+    const out = await executeMulmoScriptSave(context, { filePath, beatIndex: 99, beat: VALID_BEAT }, NOW);
+    assert.equal(out.ok, false);
+    assert.equal(JSON.stringify(beatsIn(store, filePath)), before, "a refused edit must not touch the file");
+  });
+
+  it("still re-displays unchanged when neither is given", async () => {
+    const { context, store, filePath } = await withSavedScript();
+    const before = JSON.stringify(beatsIn(store, filePath));
+    const out = await executeMulmoScriptSave(context, { filePath }, NOW);
+    assert.equal(out.ok, true);
+    assert.equal(JSON.stringify(beatsIn(store, filePath)), before);
+  });
+});

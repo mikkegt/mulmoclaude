@@ -10,6 +10,10 @@ export interface SaveMulmoScriptArgs {
   filename?: string | undefined;
   filePath?: string | undefined;
   autoGenerateMovie?: boolean | undefined;
+  /** With `filePath`: replace just this beat instead of re-sending the whole script. */
+  beatIndex?: number | undefined;
+  /** The replacement beat. Only meaningful with `filePath` + `beatIndex`. */
+  beat?: unknown;
 }
 
 /** Result payload that drives the View. `filePath` is the historical
