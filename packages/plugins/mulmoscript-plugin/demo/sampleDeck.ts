@@ -1,5 +1,5 @@
 // An all-slide MulmoScript, which is the condition that makes the View mount the deck editor
-// (`isAllSlideDeck`). Layouts are chosen for what the demo has to show: `grid` and `columns`
+// (`hasEditableBeats`). Layouts are chosen for what the demo has to show: `grid` and `columns`
 // carry reorderable list items, `bigQuote` was the layout whose marker used to swallow its own
 // quotation marks, and `title` is the plain case.
 
@@ -44,6 +44,12 @@ export const sampleDeck = {
     {
       text: "Closing",
       image: { type: "slide", slide: { layout: "bigQuote", quote: "Design is not just what it looks like", author: "Steve Jobs" } },
+    },
+    // A non-slide beat: the editor used to refuse a script containing one, so the whole thing
+    // fell through to a read-only list. Kept here so the demo covers the mixed case.
+    {
+      text: "And a markdown beat",
+      image: { type: "markdown", markdown: "## Markdown too\n\n- edited in place\n- not just decks" },
     },
   ],
 };

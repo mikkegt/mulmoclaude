@@ -93,22 +93,20 @@ export function isBeatImageReference(beat: { image?: { type?: string; [key: stri
   return beat.image?.type === "beat";
 }
 
-/** Pure check: is every beat in the script a `slide`-typed beat?
- *  When true, the View mounts `@mulmocast/beat-editor`'s
- *  `BeatListEditor` instead of the per-beat list UI (#1575).
- *  Empty / missing `beats[]` returns false — there's nothing to edit
- *  as a deck, fall through to the existing UI which renders an empty
- *  state. Mixed scripts (any non-`slide` beat) also return false; that
- *  case is deferred to a future phase. */
-export function isAllSlideDeck(script: unknown): boolean {
+/** Whether the beat editor has anything to edit.
+ *
+ *  Any beat type, not just `slide`: `@mulmocast/beat-editor` renders and edits all eight
+ *  (`textSlide` / `markdown` / `chart` / `mermaid` / `image` / `movie` / `slide` /
+ *  `html_tailwind`). The all-slide test this replaces was a limit of the OLD iframe deck
+ *  editor, which only understood decks — it stayed in place through the migration and kept a
+ *  markdown script read-only for no reason.
+ *
+ *  Empty / missing `beats[]` is false: there is nothing to edit, and the per-beat list already
+ *  renders an empty state. */
+export function hasEditableBeats(script: unknown): boolean {
   if (!isRecord(script)) return false;
   const { beats } = script;
-  if (!Array.isArray(beats) || beats.length === 0) return false;
-  return beats.every((beat) => {
-    if (!isRecord(beat)) return false;
-    const { image } = beat;
-    return isRecord(image) && image.type === "slide";
-  });
+  return Array.isArray(beats) && beats.length > 0;
 }
 
 /** A single MulmoScript beat as the View consumes it — every field

@@ -66,6 +66,17 @@ it previously reached the agent as `"@bot"`. Released as `@mulmobridge/mastodon@
 
 ### Added
 
+#### Every beat type is editable, not only an all-slide deck
+
+The editor was shown only when every beat was a `slide`. That was a limit of the OLD iframe
+deck editor, which understood decks and nothing else — it stayed in place through the move to
+`@mulmocast/beat-editor` and kept a markdown script read-only for no reason. The editor handles
+all eight types (`textSlide` / `markdown` / `chart` / `mermaid` / `image` / `movie` / `slide` /
+`html_tailwind`).
+
+The per-beat list is still there, and is still what opens first — rendering each beat's image
+happens on its mount, so it stays the default. The editor is one click away on an **Edit** tab.
+
 #### `presentMulmoScript` can revise one beat instead of resending the deck (#2949)
 
 `filePath` + `beatIndex` + `beat` replaces that one beat and presents the result. Asking the
@@ -490,7 +501,7 @@ translation behind it.
 
 ### Changed
 
-#### `@mulmoclaude/mulmoscript-plugin@4.3.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
+#### `@mulmoclaude/mulmoscript-plugin@4.4.0` — the deck editor's peer moves to `@mulmocast/deck-web@^2.0.0` (#2941)
 
 Released 2026-08-24. The plugin's peer declaration still read `^1.1.1` while both
 hosts had moved to deck-web 2.0.0, so every install printed
@@ -522,7 +533,7 @@ not on a run.
 
 ### Package releases
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.2.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.1`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.3.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.3.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.1`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.0.0`, `@mulmoclaude/markdown-utils@1.3.5`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ## [1.13.2] - 2026-08-15
 
