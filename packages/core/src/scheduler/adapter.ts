@@ -12,7 +12,6 @@ import { existsSync } from "node:fs";
 import { readFile, appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
-  type TaskSchedule,
   type TaskExecutionState,
   type TaskLogEntry,
   type CatchUpTask,
@@ -33,6 +32,7 @@ import {
   type LogDeps,
 } from "@receptron/task-scheduler";
 import type { ITaskManager, TaskDefinition, SchedulerLogger } from "./task-manager.js";
+import { toLibrarySchedule } from "./schedule-window.js";
 import { errorMessage } from "../utils/errors.js";
 
 const ONE_SECOND_MS = 1000;
@@ -129,7 +129,7 @@ export async function initScheduler(taskManager: ITaskManager, tasks: SystemTask
   const catchUpTasks: CatchUpTask[] = tasks.map((taskDef) => ({
     id: taskDef.id,
     name: taskDef.name,
-    schedule: toCoreSchedule(taskDef.schedule),
+    schedule: toLibrarySchedule(taskDef.schedule),
     missedRunPolicy: taskDef.missedRunPolicy,
     enabled: true,
   }));
@@ -357,25 +357,17 @@ async function safeUpdateState(taskId: string, patch: Partial<TaskExecutionState
  *  time of execution. This keeps lastRunAt consistent with catch-up's
  *  window-based accounting. */
 function computeCurrentWindow(task: SystemTaskDef): string {
-  const coreSchedule = toCoreSchedule(task.schedule);
+  const coreSchedule = toLibrarySchedule(task.schedule);
   // The window that just fired is the latest one at or before now.
   const nowMs = Date.now();
   const windowMs = nextWindowAfter(coreSchedule, nowMs - (coreSchedule.type === SCHEDULE_TYPES.interval ? coreSchedule.intervalSec * ONE_SECOND_MS : 0));
-  return windowMs !== null && windowMs <= nowMs ? new Date(windowMs).toISOString() : new Date(nowMs).toISOString();
+  const isRealWindow = windowMs !== null && Number.isFinite(windowMs) && windowMs <= nowMs;
+  return isRealWindow ? new Date(windowMs).toISOString() : new Date(nowMs).toISOString();
 }
 
 function computeNextScheduledFor(schedule: TaskDefinition["schedule"]): string | null {
-  const coreSchedule = toCoreSchedule(schedule);
-  const next = nextWindowAfter(coreSchedule, Date.now() + 1);
-  return next !== null ? new Date(next).toISOString() : null;
-}
-
-function toCoreSchedule(schedule: TaskDefinition["schedule"]): TaskSchedule {
-  if (schedule.type === SCHEDULE_TYPES.interval) {
-    return {
-      type: SCHEDULE_TYPES.interval,
-      intervalSec: Math.round(schedule.intervalMs / ONE_SECOND_MS),
-    };
-  }
-  return schedule;
+  const next = nextWindowAfter(toLibrarySchedule(schedule), Date.now() + 1);
+  // A schedule with no usable window answers NaN, not null — and
+  // `new Date(NaN).toISOString()` throws, taking the whole state write with it.
+  return next !== null && Number.isFinite(next) ? new Date(next).toISOString() : null;
 }

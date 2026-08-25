@@ -51,6 +51,34 @@ test("tick runs due interval tasks", async () => {
   assert.deepEqual(ran, ["a"]);
 });
 
+// #2937: the interval check counted from UTC midnight, so a 168h task was due
+// at 00:00 every single day. It must fire on its own epoch-anchored window.
+test("a 168h task fires on its weekly window, not every midnight", async () => {
+  const ran: string[] = [];
+  const register = (manager: ITaskManager) =>
+    manager.registerTask({
+      id: "weekly",
+      schedule: { type: SCHEDULE_TYPES.interval, intervalMs: 168 * 60 * 60 * 1000 },
+      run: async () => {
+        ran.push("weekly");
+      },
+    });
+
+  // 2026-08-06T00:00Z is a multiple of 168h from the epoch; the days around it
+  // are not, and used to fire all the same.
+  const onWindow = createTaskManager({ tickMs: 60_000, now: () => new Date(Date.UTC(2026, 7, 6, 0, 0, 0)) });
+  register(onWindow);
+  await onWindow.tick();
+  assert.deepEqual(ran, ["weekly"]);
+
+  for (const day of [5, 7, 8]) {
+    const offWindow = createTaskManager({ tickMs: 60_000, now: () => new Date(Date.UTC(2026, 7, day, 0, 0, 0)) });
+    register(offWindow);
+    await offWindow.tick();
+  }
+  assert.deepEqual(ran, ["weekly"], "the weekly task fired on a day that is not its window");
+});
+
 test("dependsOn enforces ordering within a tick; dependent skipped if dep fails", async () => {
   const order: string[] = [];
   const manager = createTaskManager({ tickMs: 60_000, now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, 0)) });
