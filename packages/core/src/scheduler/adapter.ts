@@ -31,7 +31,7 @@ import {
   type LogDeps,
 } from "@receptron/task-scheduler";
 import type { ITaskManager, TaskDefinition, SchedulerLogger } from "./task-manager.js";
-import { latestWindowAtOrBefore, toLibrarySchedule, unfireableScheduleReason } from "./schedule-window.js";
+import { latestWindowAtOrBefore, toLibrarySchedule, unfireableScheduleReason, windowToIso } from "./schedule-window.js";
 import { errorMessage } from "../utils/errors.js";
 
 const SCHEDULER_CONFIG_DIR = "config/scheduler";
@@ -374,8 +374,7 @@ async function safeUpdateState(taskId: string, patch: Partial<TaskExecutionState
  *  `Date.now()`: the two drift apart by however long the tick took to reach
  *  this task, and under an injected clock they are unrelated. */
 function computeCurrentWindow(task: SystemTaskDef, tickMs: number): string {
-  const windowMs = latestWindowAtOrBefore(task.schedule, tickMs);
-  return windowMs !== null ? new Date(windowMs).toISOString() : new Date(tickMs).toISOString();
+  return windowToIso(latestWindowAtOrBefore(task.schedule, tickMs)) ?? new Date(tickMs).toISOString();
 }
 
 function computeNextScheduledFor(schedule: TaskDefinition["schedule"]): string | null {
@@ -383,8 +382,8 @@ function computeNextScheduledFor(schedule: TaskDefinition["schedule"]): string |
   // would be a lie — and the library still hands back a window for some of
   // them (`"24:00"` resolves to tomorrow's midnight).
   if (unfireableScheduleReason(schedule) !== null) return null;
-  const next = nextWindowAfter(toLibrarySchedule(schedule), Date.now() + 1);
-  // A schedule with no usable window answers NaN, not null — and
-  // `new Date(NaN).toISOString()` throws, taking the whole state write with it.
-  return next !== null && Number.isFinite(next) ? new Date(next).toISOString() : null;
+  // `windowToIso` is what keeps a window that is not a date (NaN from a
+  // degenerate schedule, or an interval so large the next window is past the
+  // end of `Date`) from throwing here and taking the whole state write down.
+  return windowToIso(nextWindowAfter(toLibrarySchedule(schedule), Date.now() + 1));
 }

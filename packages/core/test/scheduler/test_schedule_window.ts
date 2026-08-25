@@ -6,6 +6,7 @@ import {
   isScheduleDueAt,
   latestWindowAtOrBefore,
   unfireableScheduleReason,
+  windowToIso,
   type TaskSchedule,
 } from "../../src/scheduler/schedule-window.ts";
 
@@ -148,6 +149,24 @@ test("the window a run belongs to is the latest one at or before the tick", () =
     "a run a second late still belongs to 19:00, not to the wall clock",
   );
   assert.equal(latestWindowAtOrBefore(daily, dailyWindowMs - ONE_SECOND_MS), dailyWindowMs - ONE_DAY_MS, "before today's window, the last one is yesterday's");
+});
+
+// An interval large enough pushes its next window past the end of `Date`. The
+// arithmetic stays finite, so only the serialization notices — with a throw,
+// inside the state writer, which used to swallow the entire run record.
+// Raised by CodeRabbit.
+test("a window that is not a date serializes to null instead of throwing", () => {
+  assert.equal(windowToIso(Date.UTC(2026, 7, 6)), "2026-08-06T00:00:00.000Z");
+  assert.equal(windowToIso(null), null);
+  assert.equal(windowToIso(Number.NaN), null);
+  assert.equal(windowToIso(1e16), null, "past the end of Date");
+  assert.equal(windowToIso(-1e16), null);
+  assert.equal(windowToIso(8.64e15), "+275760-09-13T00:00:00.000Z", "the last representable instant is still a date");
+
+  // The whole path an oversized interval takes: still finite, still not a date.
+  const absurd: TaskSchedule = { type: SCHEDULE_TYPES.interval, intervalMs: 1e16 };
+  assert.equal(unfireableScheduleReason(absurd), null, "it is a usable number — only the window is out of range");
+  assert.equal(windowToIso(latestWindowAtOrBefore(absurd, Date.UTC(2026, 7, 6))), "1970-01-01T00:00:00.000Z");
 });
 
 test("a tick that lands mid-window still fires exactly once per window", () => {

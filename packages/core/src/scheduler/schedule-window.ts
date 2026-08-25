@@ -52,6 +52,17 @@ export function isScheduleDueAt(schedule: TaskSchedule, nowMs: number, tickMs: n
   return isDueAt(toLibrarySchedule(schedule), nowMs, tickMs);
 }
 
+/** The furthest instant `Date` can represent. A window past it is finite
+ *  arithmetic but not a date, and `toISOString()` answers that with a throw —
+ *  which, inside the state writer, silently loses the whole run record. */
+const MAX_DATE_MS = 8.64e15;
+
+/** A window as an ISO timestamp, or null when the number is not a date. */
+export function windowToIso(windowMs: number | null): string | null {
+  if (windowMs === null || !Number.isFinite(windowMs) || Math.abs(windowMs) > MAX_DATE_MS) return null;
+  return new Date(windowMs).toISOString();
+}
+
 /** The most recent window at or before `nowMs`, or null when the schedule has
  *  none. `nextWindowAfter` only ever looks FORWARD, so asking it from
  *  `nowMs - one period` answers the previous window whenever `nowMs` sits
