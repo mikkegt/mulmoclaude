@@ -9,7 +9,7 @@
 「画像だけの DM は `parsed.text` が空になり、サーバに拒否される」と書いたが、
 実物のパーサに実際の `content` 形状を通したところ **`text = "@bot"`** だった。
 
-```
+```text
 image-only DM (mention alone)      htmlToText="@bot"                → text="@bot"
 image-only DM (trailing space/br)  htmlToText="@bot"                → text="@bot"
 mention + caption                  htmlToText="@bot what is this?"  → text="what is this?"
