@@ -65,26 +65,17 @@ const iframeEl = ref<HTMLIFrameElement | null>(null);
 // `load()` runs during setup — a `let` declared further down would still be in
 // its temporal dead zone.
 let searchPort: MessagePort | null = null;
-// Per-render secret handed to the srcdoc and echoed back in its handshake. Only
-// a document that actually ran our bootstrap knows it, which is what separates
-// "the view reloaded itself" from "the view navigated somewhere else".
-let handshakeNonce = "";
+
+// A view can force the host to rebuild the frame (see `acceptSearchPort`), and
+// a hostile one could do it in a loop — each rebuild mints a token. Past this
+// many rebuilds the relay gives up instead; the view keeps working, only the
+// search channel stops. Reset when the USER changes view or collection.
+const MAX_FRAME_RECLAIMS = 3;
+let frameReclaims = 0;
 
 function closeSearchPort(): void {
   searchPort?.close();
   searchPort = null;
-}
-
-/** Retire this render's handshake, so a frame the host is replacing cannot
- *  re-claim the channel while the next srcdoc is still being built. */
-function retireHandshake(): void {
-  closeSearchPort();
-  handshakeNonce = "";
-}
-
-function newHandshakeNonce(): string {
-  handshakeNonce = crypto.randomUUID();
-  return handshakeNonce;
 }
 
 // Resolved once in setup: inside a chat card this is the card's project-scoped
@@ -121,7 +112,7 @@ let loadSeq = 0;
 
 async function load(): Promise<void> {
   clearRefresh();
-  retireHandshake(); // the frame this port belonged to is being replaced
+  closeSearchPort(); // the frame this port belonged to is being replaced
   const seq = ++loadSeq;
   const stale = (): boolean => seq !== loadSeq;
   loading.value = true;
@@ -159,7 +150,6 @@ async function load(): Promise<void> {
       token: mint.data.token,
       dataUrl: mint.data.dataUrl,
       origin: window.location.origin,
-      handshakeNonce: newHandshakeNonce(),
       locale: i18nBoot.locale,
       dict: i18nBoot.dict,
     });
@@ -176,7 +166,14 @@ async function load(): Promise<void> {
 // back. `localeTag()` is documented as reactive (the binding doc on
 // `CollectionUi.localeTag`); reading it inside the watch source array lets
 // Vue track that dep transparently.
-watch([() => props.slug, () => props.view.id, () => cui.localeTag()], () => void load(), { immediate: true });
+watch(
+  [() => props.slug, () => props.view.id, () => cui.localeTag()],
+  () => {
+    frameReclaims = 0;
+    void load();
+  },
+  { immediate: true },
+);
 
 // ── Live updates ──
 // The sandboxed iframe can't open its own authenticated pub/sub socket, so the
@@ -223,20 +220,30 @@ function postSearchQuery(query: string): void {
   searchPort?.postMessage({ type: "mc-search-query", slug: props.slug, query });
 }
 
-// A claim is honoured only when it echoes this render's `handshakeNonce`, which
-// a document has only if it ran our bootstrap. So a view that reloads ITSELF
-// gets a working channel back (its fresh bootstrap re-sends the same injected
-// nonce), while a page the view navigated to — still `contentWindow`, and free
-// to post whatever it likes — cannot take the channel over.
-function acceptSearchPort(port: MessagePort | undefined, nonce: unknown): void {
-  if (!port || typeof nonce !== "string" || !handshakeNonce || nonce !== handshakeNonce) return;
-  closeSearchPort(); // a re-claim replaces the port the previous document held
-  searchPort = port;
-  // Seed a frame that was built after the user had already typed (a view
-  // switch, or the token re-mint). Empty is skipped — it is the frame's own
-  // initial state, so pushing it would fire every view's callback for nothing.
-  const query = props.searchQuery ?? "";
-  if (query) postSearchQuery(query);
+// The bootstrap runs before any of the view's own scripts, so the FIRST claim
+// on a freshly-built frame is always the view the host installed. Take that one.
+//
+// A second claim means the document changed underneath us — the view reloaded
+// itself, or it navigated somewhere and that page is asking for the channel.
+// The host cannot tell those apart, and no secret can help: anything injected
+// into the view can be handed to the next document in a URL fragment. So don't
+// choose — reinstall the view instead. A self-reload comes back working, and a
+// page the view navigated to is replaced by the real view rather than handed
+// the user's keystrokes. Either way nothing is relayed to an unknown document.
+function acceptSearchPort(port: MessagePort | undefined): void {
+  if (!port) return;
+  if (!searchPort) {
+    searchPort = port;
+    // Seed a frame built after the user had already typed (a view switch, or
+    // the token re-mint). Empty is skipped — it is the frame's own initial
+    // state, so pushing it would fire every view's callback for nothing.
+    const query = props.searchQuery ?? "";
+    if (query) postSearchQuery(query);
+    return;
+  }
+  closeSearchPort();
+  frameReclaims += 1;
+  if (frameReclaims <= MAX_FRAME_RECLAIMS) void load();
 }
 
 // Clearing the box must reach the view too, so this one relays "" as well.
@@ -271,7 +278,6 @@ interface BridgeMessage {
   mode?: unknown;
   prompt?: unknown;
   role?: unknown;
-  handshakeNonce?: unknown;
 }
 
 function isBridgeMessage(data: unknown): data is BridgeMessage {
@@ -282,7 +288,7 @@ function onWindowMessage(event: MessageEvent): void {
   if (event.source !== iframeEl.value?.contentWindow) return;
   const msg: unknown = event.data;
   if (!isBridgeMessage(msg) || msg.slug !== props.slug) return;
-  if (msg.type === "mc-view-ready") acceptSearchPort(event.ports[0], msg.handshakeNonce);
+  if (msg.type === "mc-view-ready") acceptSearchPort(event.ports[0]);
   else if (msg.type === "mc-open-item") handleOpenItem({ id: msg.id, mode: msg.mode });
   else if (msg.type === "mc-start-chat") handleStartChat({ prompt: msg.prompt, role: msg.role });
 }
@@ -291,7 +297,7 @@ onMounted(() => window.addEventListener("message", onWindowMessage));
 
 onBeforeUnmount(() => {
   clearRefresh();
-  retireHandshake();
+  closeSearchPort();
   changeUnsub?.();
   changeUnsub = null;
   window.removeEventListener("message", onWindowMessage);

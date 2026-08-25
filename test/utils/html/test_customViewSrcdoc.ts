@@ -302,16 +302,10 @@ describe("the injected bridge at runtime — search query (#2959)", () => {
     assert.notEqual(host.ready.origin, "*");
     assert.equal(host.ready.data.slug, boot.slug);
     assert.ok(host.ready.port, "the ready ping must transfer a port");
-  });
-
-  it("echoes the per-render handshake nonce so the host can trust the claim", () => {
-    // What lets the host honour a re-claim from a view that reloaded itself
-    // while refusing one from a page the view navigated to.
-    const withNonce = buildCustomViewSrcdoc("<head></head>", { ...boot, handshakeNonce: "nonce-7" });
-    assert.match(withNonce, /"handshakeNonce":"nonce-7"/);
-    assert.match(withNonce, /handshakeNonce:v\.handshakeNonce/);
-    // Absent from the boot → empty, and the host rejects an empty claim.
-    assert.match(buildCustomViewSrcdoc("<head></head>", boot), /"handshakeNonce":""/);
+    // Deliberately carries no secret: anything injected into a view can be
+    // forwarded by that view to the page it navigates to, so the host
+    // authenticates nothing here — it reinstalls the view on a second claim.
+    assert.deepEqual(Object.keys(host.ready.data).sort(), ["slug", "type"]);
   });
 
   it("updates searchQuery immediately and fires subscribers on the debounce", () => {

@@ -37,6 +37,7 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
 <button id="go" type="button">leave</button>
 <button id="again" type="button">reload</button>
 <button id="open" type="button">open</button>
+<button id="grab" type="button">leave and grab</button>
 <script>
   var view = window.__MC_VIEW;
   var calls = 0;
@@ -49,15 +50,20 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
     document.getElementById('calls').textContent = String(calls);
     paint(query);
   });
-  document.getElementById('go').addEventListener('click', function () {
-    location.href = '/e2e-elsewhere.html';
-  });
   document.getElementById('again').addEventListener('click', function () {
     location.reload();
   });
   document.getElementById('open').addEventListener('click', function () {
     view.openItem('a');
   });
+  // A hostile view would hand everything it holds to the page it navigates to.
+  // Nothing the host injects can survive that, which is why the host reinstalls
+  // the view on a re-claim instead of trusting a secret.
+  function leave(claim) {
+    location.href = '/e2e-elsewhere.html?claim=' + claim + '#' + encodeURIComponent(JSON.stringify(view));
+  }
+  document.getElementById('go').addEventListener('click', function () { leave('0'); });
+  document.getElementById('grab').addEventListener('click', function () { leave('1'); });
 </script>
 </body></html>`;
 
@@ -71,13 +77,20 @@ const ELSEWHERE_HTML = `<!doctype html><html><head></head><body>
   window.addEventListener('message', function (event) {
     document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
   });
-  // Actively try to take the search channel over, the way a page that replaced
-  // a view would: same message, same slug, a guessed nonce.
-  var channel = new MessageChannel();
-  channel.port1.onmessage = function (event) {
-    document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
-  };
-  parent.postMessage({ type: 'mc-view-ready', slug: 'news', handshakeNonce: 'guessed' }, '*', [channel.port2]);
+  // With ?claim=1, actively try to take the search channel over — replaying
+  // everything the departing view leaked in the fragment, so the claim carries
+  // real injected values rather than guesses.
+  if (location.search.indexOf('claim=1') !== -1) {
+    var channel = new MessageChannel();
+    channel.port1.onmessage = function (event) {
+      document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
+    };
+    var stolen = {};
+    try { stolen = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (error) { stolen = {}; }
+    var claim = { type: 'mc-view-ready', slug: 'news' };
+    Object.keys(stolen).forEach(function (key) { claim[key] = stolen[key]; });
+    parent.postMessage(claim, '*', [channel.port2]);
+  }
 </script>
 </body></html>`;
 
@@ -166,6 +179,25 @@ test.describe("standard search box → custom view", () => {
     await expect(viewFrame(page).locator("#caught")).not.toContainText("secret-term");
   });
 
+  test("evicts a page that tries to claim the channel, restoring the real view", async ({ page }) => {
+    // A second claim means the document changed underneath the host, and no
+    // injected secret can prove which document it is — the view can hand
+    // anything it holds to the page it navigates to (codex, iteration 3). So
+    // the host reinstalls the view it controls instead of choosing.
+    await setup(page);
+    await page.goto("/collections/news");
+    await page.getByTestId("collection-view-custom-search").click();
+    await page.getByPlaceholder("Search records…").fill("alpha");
+    await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
+
+    await viewFrame(page).locator("#grab").click();
+
+    // The claimant is gone; the real view is back and still driven by the box.
+    await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
+    await page.getByPlaceholder("Search records…").fill("gamma");
+    await expect(viewFrame(page).locator("#query")).toHaveText("gamma");
+  });
+
   test("reconnects when the view reloads itself", async ({ page }) => {
     // The flip side of the navigation guard: a view that reloads ITSELF runs the
     // same injected bootstrap again, so it must get a working channel back
@@ -177,8 +209,10 @@ test.describe("standard search box → custom view", () => {
     await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
 
     await viewFrame(page).locator("#again").click();
-    // The fresh document starts from its own empty state…
-    await expect(viewFrame(page).locator("#query")).toHaveText("(empty)");
+    // The host reinstalls the view and seeds the fresh frame with the live
+    // query, so "alpha" comes back on its own (CodeRabbit: assert the reseed
+    // rather than an empty state that could pass before the port connects).
+    await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
 
     // …and the host's search box still drives it.
     await page.getByPlaceholder("Search records…").fill("beta");

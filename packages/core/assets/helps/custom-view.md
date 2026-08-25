@@ -336,10 +336,16 @@ What you need to know:
 - **It is scoped to this collection and this session.** Switching collections
   clears the box; nothing is persisted.
 - **Navigating your frame away ends it.** The query arrives on a private
-  channel bound to the document the host built. If your view sets
-  `location = …`, the replacement page gets no further queries — deliberately,
-  since the text is the user's own. Open outbound links with
+  channel bound to the document the host built, so a page your view navigates
+  to gets no further queries — deliberately, since the text is the user's own.
+  If that page asks the host for the channel, the host reinstalls your view
+  over it rather than handing it over. Open outbound links with
   `target="_blank"` (see the sandbox rules) and your view keeps running.
+- **Reloading your own view is fine.** `location.reload()` makes the host
+  reinstall the view and hand it a fresh channel, seeded with whatever is in
+  the search box — so the query you see after a reload is the current one, not
+  an empty string. (A view that reloads itself over and over stops being
+  reconnected, so use `onChange` for refreshes.)
 - **One direction only.** You read the user's query; you cannot write the app's
   search box from view code. If your view needs a filter the box can't express
   (a date range, a facet), add that control yourself and combine it with

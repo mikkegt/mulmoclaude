@@ -111,10 +111,6 @@ export interface CollectionViewSrcdocBoot {
    *  interpolation). Optional — when omitted, the helper falls back to the
    *  key. */
   dict?: Record<string, string>;
-  /** Per-render secret the bootstrap echoes in its `mc-view-ready` handshake,
-   *  letting the host tell the document it built from one that replaced it.
-   *  Passed straight through to the srcdoc builder. */
-  handshakeNonce?: string;
 }
 
 /** Server response for `fetchRemoteView` — a mobile (`target: "mobile"`)
