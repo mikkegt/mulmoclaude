@@ -205,3 +205,20 @@ export function clearReactiveRecords(...records: object[]): void {
     Object.keys(record).forEach((key) => Reflect.deleteProperty(record, key));
   });
 }
+
+/**
+ * Whether a `focusout` means focus actually LEFT `container`, rather than moving between two
+ * fields inside it.
+ *
+ * The distinction decides whether pending edits are written: treating every focusout as a
+ * departure would write on each hop between inputs, and treating none as one would let the user
+ * walk away with the last keystroke unsaved.
+ *
+ * `null` is focus going nowhere the document can name — clicking the page chrome, or the window
+ * losing focus. That counts as leaving: the editor is no longer where the typing goes.
+ */
+export function focusLeftContainer(container: Node | null, movedTo: EventTarget | null): boolean {
+  if (!container) return false;
+  if (!(movedTo instanceof Node)) return true;
+  return !container.contains(movedTo);
+}
