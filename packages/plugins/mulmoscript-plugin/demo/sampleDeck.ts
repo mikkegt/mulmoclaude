@@ -1,5 +1,5 @@
 // An all-slide MulmoScript, which is the condition that makes the View mount the deck editor
-// (`isAllSlideDeck`). Layouts are chosen for what the demo has to show: `grid` and `columns`
+// (`hasEditableBeats`). Layouts are chosen for what the demo has to show: `grid` and `columns`
 // carry reorderable list items, `bigQuote` was the layout whose marker used to swallow its own
 // quotation marks, and `title` is the plain case.
 
