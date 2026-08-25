@@ -734,8 +734,13 @@ const { canEditBeats, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watch
  * `edit` is the beat editor — every beat type, edited in place. `media` is the per-beat list,
  * which is the only place audio / image / movie generation lives. A script with nothing to edit
  * has only the list, so the switch is hidden and this is ignored.
+ *
+ * `media` is the default because opening the script is what triggers rendering each beat's
+ * image: the auto-render on mount lives in that list, so defaulting to `edit` silently stopped
+ * thumbnails from being produced at all. Someone who wants to edit clicks once; nobody has to
+ * click to get the previews they always got.
  */
-const beatPane = ref<"edit" | "media">("edit");
+const beatPane = ref<"edit" | "media">("media");
 const showBeatEditor = computed(() => canEditBeats.value && beatPane.value === "edit");
 
 const BEAT_TAB_BASE = "rounded px-2 py-0.5 font-sans";

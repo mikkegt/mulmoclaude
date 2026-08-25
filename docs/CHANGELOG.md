@@ -74,8 +74,8 @@ deck editor, which understood decks and nothing else — it stayed in place thro
 all eight types (`textSlide` / `markdown` / `chart` / `mermaid` / `image` / `movie` / `slide` /
 `html_tailwind`).
 
-The per-beat list is still there, on an **Media** tab: audio, image and movie generation live
-only there, so the editor does not replace it.
+The per-beat list is still there, and is still what opens first — rendering each beat's image
+happens on its mount, so it stays the default. The editor is one click away on an **Edit** tab.
 
 #### `presentMulmoScript` can revise one beat instead of resending the deck (#2949)
 
