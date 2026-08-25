@@ -703,7 +703,14 @@ function commitScript(next: MulmoScript): void {
 // interactive deck editor (@mulmocast/beat-editor). Mixed scripts (any non-slide
 // beat) fall back to the existing list. The debounce + flush-on-unmount live
 // in the composable.
-const { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+const { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+
+// An agent (or another window) wrote this script — pull it back off disk so the preview shows
+// what is actually there. Registered here rather than in the composable because reloading is
+// the View's job; the composable only knows that someone else wrote.
+const unsubscribeForeignWrites = watchForeignWrites(() => {
+  void refreshScriptFromDisk();
+});
 
 // The editor takes and emits a beat array; the composable, the transport and the
 // toolResult all speak whole scripts. `beatsOf` / `withBeats` are the conversion, and
@@ -721,6 +728,7 @@ onBeforeUnmount(() => {
   // otherwise (document-scoped, not GC'd with it).
   resetBeatMovies();
   unsubscribeGenerationEvents();
+  unsubscribeForeignWrites();
 });
 const loadedSource = ref("");
 const sourceChanged = computed(() => editableSource.value !== loadedSource.value);

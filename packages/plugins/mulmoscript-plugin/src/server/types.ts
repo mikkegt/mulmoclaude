@@ -5,7 +5,7 @@
 
 import type { MinimalLogger } from "@mulmoclaude/common";
 import type { FileOps } from "gui-chat-protocol";
-import type { MulmoScriptGenerationEvent } from "../core/contract";
+import type { MulmoScriptChangedEvent, MulmoScriptGenerationEvent } from "../core/contract";
 
 export interface OpFailure {
   ok: false;
@@ -70,5 +70,10 @@ export interface MulmoScriptServerBackend {
    * session. The package keeps the in-flight snapshot itself.
    */
   onGenerationEvent?: (chatSessionId: string | undefined, event: MulmoScriptGenerationEvent) => void;
+  /**
+   * A script was written. Every open View reloads from disk, which is what makes an agent's
+   * edit appear without the user reopening the canvas.
+   */
+  onScriptChanged?: (event: MulmoScriptChangedEvent) => void;
   log?: MulmoScriptServerLog;
 }

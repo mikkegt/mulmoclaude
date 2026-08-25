@@ -107,7 +107,11 @@ export function createMulmoScriptDispatchHandler(ops: MulmoScriptServerOps): Mul
     const guard = ops.guardStoryWirePath(args.filePath);
     if (guard) return fromOpFailure(guard);
     const outcome = kind === "updateBeat" ? await executeUpdateBeat(executeContext, args) : await executeUpdateScript(executeContext, args);
-    return outcome.ok ? { ok: true } : fromPackageFailure(outcome);
+    if (!outcome.ok) return fromPackageFailure(outcome);
+    // After the write landed, never before: a View that reloads on a failed write would
+    // discard the user's edit and show the old file back.
+    ops.publishScriptChanged(str(args.filePath) ?? "", str(args.origin));
+    return { ok: true };
   }
 
   const STATUS_OPS = { movieStatus: ops.movieStatusOp, pdfStatus: ops.pdfStatusOp } as const;

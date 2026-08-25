@@ -348,6 +348,17 @@ export function createMulmoScriptServerOps(backend: MulmoScriptServerBackend) {
     backend.onGenerationEvent?.(chatSessionId, event);
   }
 
+  /**
+   * Tell every open View that this script was written.
+   *
+   * `origin` is the writer. A View passes its own id so it can ignore the echo of its own
+   * save — reloading there would rebuild the element the caret is in, mid-keystroke. A write
+   * from the agent carries no origin, so everyone reloads.
+   */
+  function publishScriptChanged(filePath: string, origin?: string): void {
+    backend.onScriptChanged?.({ filePath: canonicalWirePath(filePath), ...(origin === undefined ? {} : { origin }) });
+  }
+
   /** Snapshot of generations currently in flight for one script — the
    *  View's mount-time catch-up, filtered to its wire `filePath`. */
   function pendingGenerations(filePath: string): MulmoScriptGenerationEvent[] {
@@ -846,6 +857,7 @@ export function createMulmoScriptServerOps(backend: MulmoScriptServerBackend) {
     ffmpegGuard,
     runStoryOp,
     publishGeneration,
+    publishScriptChanged,
     pendingGenerations,
     beatImageOp,
     beatAudioOp,
