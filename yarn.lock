@@ -2098,13 +2098,6 @@
   resolved "https://registry.yarnpkg.com/@mulmochat-plugin/ui-image/-/ui-image-0.4.1.tgz#8fd3b1c4ffe21e6bc22761ff48eac03306e0d345"
   integrity sha512-I3AqTIuQPsSMNxDON9UTxT2KO57HV6uUVotCIFskV0UqBMQrQ3FUu8J+qXRWDdjPyYaHoC8AJsi91TbNrOMwng==
 
-"@mulmoclaude/mulmoscript-plugin@^3.1.0":
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/@mulmoclaude/mulmoscript-plugin/-/mulmoscript-plugin-3.1.0.tgz#5bb177a486a5d8b8f4fe94818fd89a4bd6d9f463"
-  integrity sha512-NQWU9qYh7AVdKMbEeGiVhrjQAEh/J9WMmmvmVlfg4FN4E6nyPIb87GCXsyoFBhoyzrjbceCDqk/RQ1DpcRHpbQ==
-  dependencies:
-    "@mulmoclaude/common" "^1.2.0"
-
 "@napi-rs/wasm-runtime@^1.1.4", "@napi-rs/wasm-runtime@^1.1.6", "@napi-rs/wasm-runtime@^1.2.0":
   version "1.2.2"
   resolved "https://registry.yarnpkg.com/@napi-rs/wasm-runtime/-/wasm-runtime-1.2.2.tgz#c70706532e5827c0932ca6bf43ee2c512f29c639"
