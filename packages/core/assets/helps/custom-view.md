@@ -328,8 +328,8 @@ What you need to know:
 
 - **`searchQuery` is always current.** It updates the instant the user types, so
   reading it inside your own render (as above) is never a keystroke behind.
-- **The callback is debounced** — one call per typed word, not one per
-  keystroke — and receives the query as its argument
+- **The callback is debounced** — it runs once typing pauses (~150 ms), not
+  once per keystroke — and receives the query as its argument
   (`onSearchQueryChange((q) => …)`), so you can use either source.
 - **An empty string means the box is empty** — show everything, don't show
   nothing. It fires on clearing too.

@@ -65,10 +65,26 @@ const iframeEl = ref<HTMLIFrameElement | null>(null);
 // `load()` runs during setup — a `let` declared further down would still be in
 // its temporal dead zone.
 let searchPort: MessagePort | null = null;
+// Per-render secret handed to the srcdoc and echoed back in its handshake. Only
+// a document that actually ran our bootstrap knows it, which is what separates
+// "the view reloaded itself" from "the view navigated somewhere else".
+let handshakeNonce = "";
 
 function closeSearchPort(): void {
   searchPort?.close();
   searchPort = null;
+}
+
+/** Retire this render's handshake, so a frame the host is replacing cannot
+ *  re-claim the channel while the next srcdoc is still being built. */
+function retireHandshake(): void {
+  closeSearchPort();
+  handshakeNonce = "";
+}
+
+function newHandshakeNonce(): string {
+  handshakeNonce = crypto.randomUUID();
+  return handshakeNonce;
 }
 
 // Resolved once in setup: inside a chat card this is the card's project-scoped
@@ -105,7 +121,7 @@ let loadSeq = 0;
 
 async function load(): Promise<void> {
   clearRefresh();
-  closeSearchPort(); // the frame this port belonged to is being replaced
+  retireHandshake(); // the frame this port belonged to is being replaced
   const seq = ++loadSeq;
   const stale = (): boolean => seq !== loadSeq;
   loading.value = true;
@@ -143,6 +159,7 @@ async function load(): Promise<void> {
       token: mint.data.token,
       dataUrl: mint.data.dataUrl,
       origin: window.location.origin,
+      handshakeNonce: newHandshakeNonce(),
       locale: i18nBoot.locale,
       dict: i18nBoot.dict,
     });
@@ -206,12 +223,14 @@ function postSearchQuery(query: string): void {
   searchPort?.postMessage({ type: "mc-search-query", slug: props.slug, query });
 }
 
-// The bootstrap hands its port up as soon as it runs — before any of the view's
-// own scripts, so the real view always claims this frame's single port. Ignore
-// any later claim: after a navigation the replacement document is still
-// `contentWindow`, and would otherwise be able to ask for the channel back.
-function acceptSearchPort(port: MessagePort | undefined): void {
-  if (!port || searchPort) return;
+// A claim is honoured only when it echoes this render's `handshakeNonce`, which
+// a document has only if it ran our bootstrap. So a view that reloads ITSELF
+// gets a working channel back (its fresh bootstrap re-sends the same injected
+// nonce), while a page the view navigated to — still `contentWindow`, and free
+// to post whatever it likes — cannot take the channel over.
+function acceptSearchPort(port: MessagePort | undefined, nonce: unknown): void {
+  if (!port || typeof nonce !== "string" || !handshakeNonce || nonce !== handshakeNonce) return;
+  closeSearchPort(); // a re-claim replaces the port the previous document held
   searchPort = port;
   // Seed a frame that was built after the user had already typed (a view
   // switch, or the token re-mint). Empty is skipped — it is the frame's own
@@ -243,22 +262,36 @@ function handleStartChat(body: { prompt?: unknown; role?: unknown }): void {
   emit("startChat", { prompt, role: typeof body.role === "string" ? body.role : undefined });
 }
 
+/** Anything the sandboxed view may post up. Every field stays `unknown` — the
+ *  handlers below validate them; this only says "some object arrived". */
+interface BridgeMessage {
+  type?: unknown;
+  slug?: unknown;
+  id?: unknown;
+  mode?: unknown;
+  prompt?: unknown;
+  role?: unknown;
+  handshakeNonce?: unknown;
+}
+
+function isBridgeMessage(data: unknown): data is BridgeMessage {
+  return typeof data === "object" && data !== null;
+}
+
 function onWindowMessage(event: MessageEvent): void {
   if (event.source !== iframeEl.value?.contentWindow) return;
   const msg: unknown = event.data;
-  if (typeof msg !== "object" || msg === null) return;
-  if (!("slug" in msg) || msg.slug !== props.slug) return;
-  const type = "type" in msg ? msg.type : undefined;
-  if (type === "mc-view-ready") acceptSearchPort(event.ports[0]);
-  else if (type === "mc-open-item") handleOpenItem({ id: "id" in msg ? msg.id : undefined, mode: "mode" in msg ? msg.mode : undefined });
-  else if (type === "mc-start-chat") handleStartChat({ prompt: "prompt" in msg ? msg.prompt : undefined, role: "role" in msg ? msg.role : undefined });
+  if (!isBridgeMessage(msg) || msg.slug !== props.slug) return;
+  if (msg.type === "mc-view-ready") acceptSearchPort(event.ports[0], msg.handshakeNonce);
+  else if (msg.type === "mc-open-item") handleOpenItem({ id: msg.id, mode: msg.mode });
+  else if (msg.type === "mc-start-chat") handleStartChat({ prompt: msg.prompt, role: msg.role });
 }
 
 onMounted(() => window.addEventListener("message", onWindowMessage));
 
 onBeforeUnmount(() => {
   clearRefresh();
-  closeSearchPort();
+  retireHandshake();
   changeUnsub?.();
   changeUnsub = null;
   window.removeEventListener("message", onWindowMessage);

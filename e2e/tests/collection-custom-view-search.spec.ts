@@ -35,6 +35,8 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
 <div id="query">unset</div>
 <div id="calls">0</div>
 <button id="go" type="button">leave</button>
+<button id="again" type="button">reload</button>
+<button id="open" type="button">open</button>
 <script>
   var view = window.__MC_VIEW;
   var calls = 0;
@@ -50,6 +52,12 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
   document.getElementById('go').addEventListener('click', function () {
     location.href = '/e2e-elsewhere.html';
   });
+  document.getElementById('again').addEventListener('click', function () {
+    location.reload();
+  });
+  document.getElementById('open').addEventListener('click', function () {
+    view.openItem('a');
+  });
 </script>
 </body></html>`;
 
@@ -63,6 +71,13 @@ const ELSEWHERE_HTML = `<!doctype html><html><head></head><body>
   window.addEventListener('message', function (event) {
     document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
   });
+  // Actively try to take the search channel over, the way a page that replaced
+  // a view would: same message, same slug, a guessed nonce.
+  var channel = new MessageChannel();
+  channel.port1.onmessage = function (event) {
+    document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
+  };
+  parent.postMessage({ type: 'mc-view-ready', slug: 'news', handshakeNonce: 'guessed' }, '*', [channel.port2]);
 </script>
 </body></html>`;
 
@@ -149,6 +164,36 @@ test.describe("standard search box → custom view", () => {
     // The probe arrived, so any earlier relay would have arrived before it.
     await expect(viewFrame(page).locator("#caught")).toContainText(PROBE);
     await expect(viewFrame(page).locator("#caught")).not.toContainText("secret-term");
+  });
+
+  test("reconnects when the view reloads itself", async ({ page }) => {
+    // The flip side of the navigation guard: a view that reloads ITSELF runs the
+    // same injected bootstrap again, so it must get a working channel back
+    // rather than going silently deaf (#2963 review, codex iteration 2).
+    await setup(page);
+    await page.goto("/collections/news");
+    await page.getByTestId("collection-view-custom-search").click();
+    await page.getByPlaceholder("Search records…").fill("alpha");
+    await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
+
+    await viewFrame(page).locator("#again").click();
+    // The fresh document starts from its own empty state…
+    await expect(viewFrame(page).locator("#query")).toHaveText("(empty)");
+
+    // …and the host's search box still drives it.
+    await page.getByPlaceholder("Search records…").fill("beta");
+    await expect(viewFrame(page).locator("#query")).toHaveText("beta");
+  });
+
+  test("still routes openItem after the search branch joined the dispatcher", async ({ page }) => {
+    // The view→host message dispatcher gained an `mc-view-ready` branch and was
+    // narrowed once instead of per field. `openItem` shares that dispatcher, so
+    // drive it for real rather than reasoning that it is unaffected.
+    await setup(page);
+    await page.goto("/collections/news");
+    await page.getByTestId("collection-view-custom-search").click();
+    await viewFrame(page).locator("#open").click();
+    await expect(page.getByTestId("collections-record-modal")).toBeVisible();
   });
 
   test("hides the host's match count while a custom view is active", async ({ page }) => {

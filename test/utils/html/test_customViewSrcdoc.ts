@@ -304,6 +304,16 @@ describe("the injected bridge at runtime — search query (#2959)", () => {
     assert.ok(host.ready.port, "the ready ping must transfer a port");
   });
 
+  it("echoes the per-render handshake nonce so the host can trust the claim", () => {
+    // What lets the host honour a re-claim from a view that reloaded itself
+    // while refusing one from a page the view navigated to.
+    const withNonce = buildCustomViewSrcdoc("<head></head>", { ...boot, handshakeNonce: "nonce-7" });
+    assert.match(withNonce, /"handshakeNonce":"nonce-7"/);
+    assert.match(withNonce, /handshakeNonce:v\.handshakeNonce/);
+    // Absent from the boot → empty, and the host rejects an empty claim.
+    assert.match(buildCustomViewSrcdoc("<head></head>", boot), /"handshakeNonce":""/);
+  });
+
   it("updates searchQuery immediately and fires subscribers on the debounce", () => {
     const host = mountBridge();
     const seen: string[] = [];

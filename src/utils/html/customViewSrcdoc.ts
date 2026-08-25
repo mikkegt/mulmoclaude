@@ -61,8 +61,10 @@ const SEARCH_QUERY_DEBOUNCE_MS = 150;
  *    (nothing in the sandbox or CSP stops `location = "https://elsewhere"`),
  *    handing the user's typed text to whatever document replaced it. A port is
  *    bound to the document that received it, so navigation severs the channel
- *    on its own. This bootstrap runs before any of the view's own scripts, so
- *    the real view always claims the generation's single port first.
+ *    on its own. The handshake echoes `handshakeNonce`, the per-render secret
+ *    only a document that ran THIS bootstrap can know, so a view that reloads
+ *    itself reconnects while a page the view navigated to cannot claim the
+ *    channel.
  *  - CSP-violation reporter: a `securitypolicyviolation` listener posts a
  *    `{ type: "mc-csp-violation", slug, blockedURI, violatedDirective }` ping
  *    to the host (#1989) so a blocked resource (e.g. a Google Maps embed the
@@ -91,7 +93,7 @@ function viewBridgeBootstrap(): string {
   // shipping the full vue-i18n runtime into every sandboxed iframe (~50KB)
   // would dominate the page weight. Authors who need plurals can pre-pick
   // per-count keys client-side.
-  return `(function(){var v=window.__MC_VIEW,cbs=[],t,qcbs=[],qt;function fire(){t=undefined;cbs.slice().forEach(function(cb){try{cb()}catch(e){}});}function fireQuery(){qt=undefined;var q=v.searchQuery;qcbs.slice().forEach(function(cb){try{cb(q)}catch(e){}});}window.addEventListener('message',function(e){if(e.source!==window.parent)return;var d=e.data;if(!d||d.type!=='mc-collection-changed'||d.slug!==v.slug)return;if(t)clearTimeout(t);t=setTimeout(fire,${ONCHANGE_DEBOUNCE_MS});});var qch=new MessageChannel();qch.port1.onmessage=function(e){var d=e.data;if(!d||d.type!=='mc-search-query')return;v.searchQuery=typeof d.query==='string'?d.query:'';if(qt)clearTimeout(qt);qt=setTimeout(fireQuery,${SEARCH_QUERY_DEBOUNCE_MS});};window.parent.postMessage({type:'mc-view-ready',slug:v.slug},v.origin,[qch.port2]);v.onChange=function(cb){if(typeof cb!=='function')return function(){};cbs.push(cb);return function(){var i=cbs.indexOf(cb);if(i>=0)cbs.splice(i,1);};};v.onSearchQueryChange=function(cb){if(typeof cb!=='function')return function(){};qcbs.push(cb);return function(){var i=qcbs.indexOf(cb);if(i>=0)qcbs.splice(i,1);};};v.openItem=function(id,mode){window.parent.postMessage({type:'mc-open-item',slug:v.slug,id:String(id),mode:mode==='edit'?'edit':'view'},v.origin);};v.startChat=function(prompt,role){window.parent.postMessage({type:'mc-start-chat',slug:v.slug,prompt:String(prompt),role:typeof role==='string'?role:undefined},v.origin);};v.dict=v.dict||{};v.t=function(key,named){var s=v.dict[key];if(typeof s!=='string')return typeof key==='string'?key:String(key);if(!named||typeof named!=='object')return s;return s.replace(/\\{(\\w+)\\}/g,function(m,n){var x=named[n];return x==null?m:String(x);});};document.addEventListener('securitypolicyviolation',function(e){window.parent.postMessage({type:'mc-csp-violation',slug:v.slug,nonce:v.cspNonce,blockedURI:e.blockedURI,violatedDirective:e.violatedDirective,effectiveDirective:e.effectiveDirective},v.origin);});})();`;
+  return `(function(){var v=window.__MC_VIEW,cbs=[],t,qcbs=[],qt;function fire(){t=undefined;cbs.slice().forEach(function(cb){try{cb()}catch(e){}});}function fireQuery(){qt=undefined;var q=v.searchQuery;qcbs.slice().forEach(function(cb){try{cb(q)}catch(e){}});}window.addEventListener('message',function(e){if(e.source!==window.parent)return;var d=e.data;if(!d||d.type!=='mc-collection-changed'||d.slug!==v.slug)return;if(t)clearTimeout(t);t=setTimeout(fire,${ONCHANGE_DEBOUNCE_MS});});var qch=new MessageChannel();qch.port1.onmessage=function(e){var d=e.data;if(!d||d.type!=='mc-search-query')return;v.searchQuery=typeof d.query==='string'?d.query:'';if(qt)clearTimeout(qt);qt=setTimeout(fireQuery,${SEARCH_QUERY_DEBOUNCE_MS});};window.parent.postMessage({type:'mc-view-ready',slug:v.slug,handshakeNonce:v.handshakeNonce},v.origin,[qch.port2]);v.onChange=function(cb){if(typeof cb!=='function')return function(){};cbs.push(cb);return function(){var i=cbs.indexOf(cb);if(i>=0)cbs.splice(i,1);};};v.onSearchQueryChange=function(cb){if(typeof cb!=='function')return function(){};qcbs.push(cb);return function(){var i=qcbs.indexOf(cb);if(i>=0)qcbs.splice(i,1);};};v.openItem=function(id,mode){window.parent.postMessage({type:'mc-open-item',slug:v.slug,id:String(id),mode:mode==='edit'?'edit':'view'},v.origin);};v.startChat=function(prompt,role){window.parent.postMessage({type:'mc-start-chat',slug:v.slug,prompt:String(prompt),role:typeof role==='string'?role:undefined},v.origin);};v.dict=v.dict||{};v.t=function(key,named){var s=v.dict[key];if(typeof s!=='string')return typeof key==='string'?key:String(key);if(!named||typeof named!=='object')return s;return s.replace(/\\{(\\w+)\\}/g,function(m,n){var x=named[n];return x==null?m:String(x);});};document.addEventListener('securitypolicyviolation',function(e){window.parent.postMessage({type:'mc-csp-violation',slug:v.slug,nonce:v.cspNonce,blockedURI:e.blockedURI,violatedDirective:e.violatedDirective,effectiveDirective:e.effectiveDirective},v.origin);});})();`;
 }
 
 export interface CustomViewBootstrap {
@@ -114,6 +116,11 @@ export interface CustomViewBootstrap {
    *  iframe sees ONLY this locale's strings (never the full multi-locale
    *  JSON). Optional / may be `{}` — the `t()` helper falls back to the key. */
   dict?: Record<string, string>;
+  /** Per-render secret echoed in the `mc-view-ready` handshake, so the host can
+   *  tell a document that actually ran this bootstrap from one that merely
+   *  occupies the frame after the view navigated itself away. Same idea as
+   *  `cspNonce` (#1989); a fresh value per srcdoc build. */
+  handshakeNonce?: string;
 }
 
 function absoluteDataUrl(dataUrl: string, origin: string): string {
@@ -136,6 +143,7 @@ export function buildCustomViewSrcdoc(html: string, boot: CustomViewBootstrap, c
     // iframe reload — on every keystroke (#2959).
     searchQuery: "",
     cspNonce, // echoed in mc-csp-violation so the host can trust the sender (#1989)
+    handshakeNonce: boot.handshakeNonce ?? "",
     locale: boot.locale ?? "",
     dict: boot.dict ?? {},
   }).replace(/</g, "\\u003c");
