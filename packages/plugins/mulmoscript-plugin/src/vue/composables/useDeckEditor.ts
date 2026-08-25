@@ -11,6 +11,18 @@ import type { DeckScriptShape, MulmoScript } from "../viewTypes";
 
 const DECK_SAVE_DEBOUNCE_MS = 300;
 
+/**
+ * Who this editor is, on the wire.
+ *
+ * Every write carries it so the server's "this script changed" broadcast can be told apart
+ * from someone else's. Without it a save would echo back and reload the editor mid-keystroke,
+ * rebuilding the element the caret sits in.
+ *
+ * Per module instance rather than per component: one View is mounted at a time, and a value
+ * that survives a remount keeps a save in flight from being mistaken for a foreign write.
+ */
+const EDITOR_ORIGIN = `deck-editor-${Math.random().toString(36).slice(2)}`;
+
 export interface UseDeckEditorOptions {
   api: MulmoScriptTransport;
   filePath: ComputedRef<string>;
@@ -40,7 +52,7 @@ export function useDeckEditor({ api, filePath, effectiveScript, commitScript }: 
     const next = pendingDeckScript;
     pendingDeckScript = null;
     if (!next || !filePath.value) return;
-    const response = await api.call("updateScript", { filePath: filePath.value, script: next });
+    const response = await api.call("updateScript", { filePath: filePath.value, script: next, origin: EDITOR_ORIGIN });
     if (!response.ok) {
       // Surface via console; the deck editor still holds the latest edit in
       // its props until the next refresh, so the view doesn't snap back on a
@@ -65,5 +77,23 @@ export function useDeckEditor({ api, filePath, effectiveScript, commitScript }: 
     }
   }
 
-  return { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave };
+  /**
+   * Reload when someone else writes this script — the agent, or another window.
+   *
+   * A pending local edit is flushed first rather than dropped: the user's keystrokes are the
+   * thing they would notice losing, and the write that triggered this has already landed, so
+   * flushing cannot clobber it out of order.
+   */
+  function watchForeignWrites(reload: () => void): () => void {
+    return api.onScriptChanged(
+      () => filePath.value,
+      EDITOR_ORIGIN,
+      () => {
+        flushPendingDeckSave();
+        reload();
+      },
+    );
+  }
+
+  return { isDeck, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites };
 }
