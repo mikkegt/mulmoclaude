@@ -35,7 +35,7 @@ import { useCollectionI18n } from "../lang";
 import { errorMessage } from "@mulmoclaude/core/collection";
 import type { CollectionCustomView } from "@mulmoclaude/core/collection";
 import { useCollectionUi } from "../scopedUi";
-import { decideSearchChannelClaim } from "../searchChannelPolicy";
+import { decideSearchChannelClaim, type SearchChannelState } from "../searchChannelPolicy";
 
 const { t } = useCollectionI18n();
 
@@ -67,10 +67,12 @@ const iframeEl = ref<HTMLIFrameElement | null>(null);
 // its temporal dead zone.
 let searchPort: MessagePort | null = null;
 
-// Rebuilds already granted since the user last switched view or collection.
-// The rule itself lives in `decideSearchChannelClaim` — pure, so it is covered
-// exhaustively by unit tests rather than by racing an async iframe rebuild.
+// Rebuilds already granted since the user last switched view or collection,
+// and where the channel stands. The rule itself lives in
+// `decideSearchChannelClaim` — pure, so it is covered exhaustively by unit
+// tests rather than by racing an async iframe rebuild.
 let frameReclaims = 0;
+let searchState: SearchChannelState = "idle";
 
 function closeSearchPort(): void {
   searchPort?.close();
@@ -112,6 +114,7 @@ let loadSeq = 0;
 async function load(): Promise<void> {
   clearRefresh();
   closeSearchPort(); // the frame this port belonged to is being replaced
+  if (searchState === "connected") searchState = "idle";
   const seq = ++loadSeq;
   const stale = (): boolean => seq !== loadSeq;
   loading.value = true;
@@ -169,6 +172,7 @@ watch(
   [() => props.slug, () => props.view.id, () => cui.localeTag()],
   () => {
     frameReclaims = 0;
+    searchState = "idle";
     void load();
   },
   { immediate: true },
@@ -223,9 +227,10 @@ function postSearchQuery(query: string): void {
 // `searchChannelPolicy.ts` alongside the rule itself.
 function acceptSearchPort(port: MessagePort | undefined): void {
   if (!port) return;
-  const action = decideSearchChannelClaim(searchPort !== null, frameReclaims);
+  const action = decideSearchChannelClaim(searchState, frameReclaims);
   if (action === "connect") {
     searchPort = port;
+    searchState = "connected";
     // Seed a frame built after the user had already typed (a view switch, or
     // the token re-mint). Empty is skipped — it is the frame's own initial
     // state, so pushing it would fire every view's callback for nothing.
@@ -236,8 +241,13 @@ function acceptSearchPort(port: MessagePort | undefined): void {
   closeSearchPort();
   if (action === "reinstall") {
     frameReclaims += 1;
+    searchState = "idle"; // the frame is being rebuilt; its view may connect
     void load();
+    return;
   }
+  // Terminal: refusing must not read as "disconnected", or the next claim from
+  // the same document would be taken for a fresh frame and handed the channel.
+  searchState = "exhausted";
 }
 
 // Clearing the box must reach the view too, so this one relays "" as well.

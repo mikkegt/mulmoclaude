@@ -93,7 +93,7 @@ const ELSEWHERE_HTML = `<!doctype html><html><head></head><body>
   // With ?claim=1, actively try to take the search channel over — replaying
   // everything the departing view leaked in the fragment, so the claim carries
   // real injected values rather than guesses.
-  if (location.search.indexOf('claim=1') !== -1) {
+  function claimChannel() {
     var channel = new MessageChannel();
     channel.port1.onmessage = function (event) {
       document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
@@ -104,6 +104,7 @@ const ELSEWHERE_HTML = `<!doctype html><html><head></head><body>
     Object.keys(stolen).forEach(function (key) { claim[key] = stolen[key]; });
     parent.postMessage(claim, '*', [channel.port2]);
   }
+  if (location.search.indexOf('claim=1') !== -1) claimChannel();
 </script>
 </body></html>`;
 

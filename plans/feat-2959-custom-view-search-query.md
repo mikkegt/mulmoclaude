@@ -103,9 +103,11 @@ reset. `refreshItemsInPlace` deliberately *keeps* it (`:798`) so a pub/sub
 update doesn't wipe what the user is typing — and it doesn't remount the
 iframe, so the relay must survive a live data refresh (postMessage does).
 
-The iframe-side handler validates `d.slug === v.slug` exactly like
-`mc-collection-changed`, so a message in flight across a collection switch
-cannot land in the next view.
+The search text no longer travels on the window at all: the port is handed to
+one document and belongs to it, so there is no slug to re-check and nothing in
+flight across a collection switch can land in the next view. The
+`mc-collection-changed` ping still does validate `d.slug === v.slug`, since it
+does still travel on the window.
 
 ## 5. Verification
 

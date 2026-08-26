@@ -133,9 +133,9 @@ export function buildCustomViewSrcdoc(html: string, boot: CustomViewBootstrap, c
     token: boot.token,
     dataUrl: absoluteDataUrl(boot.dataUrl, boot.origin),
     origin: boot.origin, // target origin for openItem's postMessage to the parent
-    // Always "": the live value arrives by postMessage (`mc-search-query`).
-    // Baking it in here would rebuild the srcdoc — a token re-mint plus a full
-    // iframe reload — on every keystroke (#2959).
+    // Always "": the live value arrives over the transferred MessageChannel
+    // port. Baking it in here would rebuild the srcdoc — a token re-mint plus
+    // a full iframe reload — on every keystroke (#2959).
     searchQuery: "",
     cspNonce, // echoed in mc-csp-violation so the host can trust the sender (#1989)
     locale: boot.locale ?? "",

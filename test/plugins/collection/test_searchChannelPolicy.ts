@@ -6,47 +6,67 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decideSearchChannelClaim, MAX_FRAME_RECLAIMS } from "../../../packages/plugins/collection-plugin/src/vue/searchChannelPolicy.js";
+import {
+  decideSearchChannelClaim,
+  MAX_FRAME_RECLAIMS,
+  type SearchChannelState,
+} from "../../../packages/plugins/collection-plugin/src/vue/searchChannelPolicy.js";
+
+const STATES: SearchChannelState[] = ["idle", "connected", "exhausted"];
 
 describe("decideSearchChannelClaim", () => {
-  it("hands the channel to the first claim on a fresh frame", () => {
-    // The bootstrap runs before the view's own scripts, so this is always the
-    // view the host just installed — whatever the reclaim count.
-    assert.equal(decideSearchChannelClaim(false, 0), "connect");
-    assert.equal(decideSearchChannelClaim(false, MAX_FRAME_RECLAIMS), "connect");
-    assert.equal(decideSearchChannelClaim(false, 1_000), "connect");
+  it("hands the channel to the first claim on a frame the host just built", () => {
+    // The bootstrap runs before the view's own scripts, so an idle frame's
+    // first claim is the view the host installed — whatever the reclaim count.
+    assert.equal(decideSearchChannelClaim("idle", 0), "connect");
+    assert.equal(decideSearchChannelClaim("idle", MAX_FRAME_RECLAIMS), "connect");
+    assert.equal(decideSearchChannelClaim("idle", 1_000), "connect");
   });
 
-  it("answers a later claim by reinstalling the view, never by handing it over", () => {
+  it("answers a claim on a connected frame by reinstalling, never by handing it over", () => {
     // A second claim means the document changed underneath the host. It cannot
     // tell a self-reload from a page the view navigated to, so it rebuilds the
     // frame instead of choosing. Crucially: never "connect".
     for (let reclaims = 0; reclaims < MAX_FRAME_RECLAIMS; reclaims++) {
-      assert.equal(decideSearchChannelClaim(true, reclaims), "reinstall");
+      assert.equal(decideSearchChannelClaim("connected", reclaims), "reinstall");
     }
   });
 
   it("stops reconnecting once the rebuild budget is spent", () => {
     // Each rebuild mints a token, so a view reloading in a loop must not be
     // able to spend them forever.
-    assert.equal(decideSearchChannelClaim(true, MAX_FRAME_RECLAIMS), "giveUp");
-    assert.equal(decideSearchChannelClaim(true, MAX_FRAME_RECLAIMS + 1), "giveUp");
-    assert.equal(decideSearchChannelClaim(true, Number.MAX_SAFE_INTEGER), "giveUp");
+    assert.equal(decideSearchChannelClaim("connected", MAX_FRAME_RECLAIMS), "giveUp");
+    assert.equal(decideSearchChannelClaim("connected", MAX_FRAME_RECLAIMS + 1), "giveUp");
+    assert.equal(decideSearchChannelClaim("connected", Number.MAX_SAFE_INTEGER), "giveUp");
+  });
+
+  it("keeps refusing once exhausted, however many times it is asked", () => {
+    // The regression that mattered: refusing a claim closes the host's port, so
+    // if "gave up" were merely "no port held" the very next claim from that same
+    // document would look like a fresh frame — and be handed the user's search
+    // text. Exhaustion is terminal, at every reclaim count.
+    const asked = [0, 1, MAX_FRAME_RECLAIMS - 1, MAX_FRAME_RECLAIMS, MAX_FRAME_RECLAIMS + 5, Number.MAX_SAFE_INTEGER];
+    asked.forEach((reclaims) => {
+      assert.equal(decideSearchChannelClaim("exhausted", reclaims), "giveUp", `exhausted must refuse at reclaims=${reclaims}`);
+    });
   });
 
   it("grants exactly MAX_FRAME_RECLAIMS rebuilds, counting from zero", () => {
     // The off-by-one that would either waste a rebuild or grant one too many.
-    const granted = Array.from({ length: MAX_FRAME_RECLAIMS + 3 }, (_, reclaims) => decideSearchChannelClaim(true, reclaims)).filter(
+    const granted = Array.from({ length: MAX_FRAME_RECLAIMS + 3 }, (_, reclaims) => decideSearchChannelClaim("connected", reclaims)).filter(
       (action) => action === "reinstall",
     ).length;
     assert.equal(granted, MAX_FRAME_RECLAIMS);
   });
 
-  it("never returns connect for a claim on an already-connected frame", () => {
-    // The security property, stated as its own case: whatever the count, a
-    // later claimant is never given the user's search text.
-    const actions = Array.from({ length: 50 }, (_, reclaims) => decideSearchChannelClaim(true, reclaims));
-    assert.ok(!actions.includes("connect"), "a re-claim must never be handed the channel");
+  it("never connects anything but a frame the host just built", () => {
+    // The security property, stated on its own: whatever the count and whatever
+    // the state, only an idle frame is handed the channel.
+    STATES.filter((state) => state !== "idle").forEach((state) => {
+      Array.from({ length: 50 }, (_, reclaims) => decideSearchChannelClaim(state, reclaims)).forEach((action) => {
+        assert.notEqual(action, "connect", `${state} must never be handed the channel`);
+      });
+    });
   });
 
   it("keeps the budget at the number the authoring docs promise", () => {
@@ -57,10 +77,18 @@ describe("decideSearchChannelClaim", () => {
   });
 
   it("honours an injected budget, including a zero that disables reconnecting", () => {
-    assert.equal(decideSearchChannelClaim(true, 0, 0), "giveUp");
-    assert.equal(decideSearchChannelClaim(true, 0, 1), "reinstall");
-    assert.equal(decideSearchChannelClaim(true, 1, 1), "giveUp");
-    // A fresh frame still connects even when reconnecting is disabled.
-    assert.equal(decideSearchChannelClaim(false, 0, 0), "connect");
+    assert.equal(decideSearchChannelClaim("connected", 0, 0), "giveUp");
+    assert.equal(decideSearchChannelClaim("connected", 0, 1), "reinstall");
+    assert.equal(decideSearchChannelClaim("connected", 1, 1), "giveUp");
+    // A frame the host built still connects even when reconnecting is disabled.
+    assert.equal(decideSearchChannelClaim("idle", 0, 0), "connect");
+  });
+
+  it("returns one of the three actions for every state and count", () => {
+    STATES.forEach((state) => {
+      [0, 1, 3, 99].forEach((reclaims) => {
+        assert.ok(["connect", "reinstall", "giveUp"].includes(decideSearchChannelClaim(state, reclaims)));
+      });
+    });
   });
 });

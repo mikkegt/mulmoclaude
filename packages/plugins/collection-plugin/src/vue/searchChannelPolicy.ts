@@ -20,20 +20,34 @@
 /** Frame rebuilds granted between one user-initiated view change and the next. */
 export const MAX_FRAME_RECLAIMS = 3;
 
+/** Where the host's end of the search channel stands.
+ *
+ *  `exhausted` is a terminal state, not merely "disconnected". Collapsing it
+ *  into "no port" is what let a claimant through: refusing a claim closes the
+ *  host's port, so the very next claim from the same document looked like a
+ *  fresh frame and was connected — and seeded with the user's search text. */
+export type SearchChannelState =
+  /** No port held, and willing to accept one — a frame the host just built. */
+  | "idle"
+  /** Holding a port for the document currently in the frame. */
+  | "connected"
+  /** Rebuild budget spent. Refuse every claim until the user changes view. */
+  | "exhausted";
+
 export type SearchChannelAction =
   /** Hand this claim the channel — it is the view the host just installed. */
   | "connect"
   /** Drop the channel and rebuild the frame, replacing whoever is in it. */
   | "reinstall"
-  /** Budget spent: leave the frame alone and stop relaying the search text. */
+  /** Refuse, and stay refusing: the frame keeps whatever document is in it. */
   | "giveUp";
 
 /** Decide what a `mc-view-ready` claim earns.
  *
- *  `connected` is whether the host currently holds a port for this frame, and
- *  `reclaims` how many rebuilds it has already granted since the user last
- *  switched view or collection. */
-export function decideSearchChannelClaim(connected: boolean, reclaims: number, max: number = MAX_FRAME_RECLAIMS): SearchChannelAction {
-  if (!connected) return "connect";
+ *  `reclaims` is how many rebuilds the host has already granted since the user
+ *  last switched view or collection. */
+export function decideSearchChannelClaim(state: SearchChannelState, reclaims: number, max: number = MAX_FRAME_RECLAIMS): SearchChannelAction {
+  if (state === "exhausted") return "giveUp";
+  if (state === "idle") return "connect";
   return reclaims < max ? "reinstall" : "giveUp";
 }
