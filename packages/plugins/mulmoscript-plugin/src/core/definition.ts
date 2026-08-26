@@ -113,13 +113,11 @@ IMPORTANT: "imagePrompt" and "moviePrompt" are plain string fields on the beat, 
       },
       beatIndex: {
         type: "number",
-        description:
-          "0-based index of the beat to replace. Requires `filePath` and `beat`. Omit to re-display the script unchanged.",
+        description: "0-based index of the beat to replace. Requires `filePath` and `beat`. Omit to re-display the script unchanged.",
       },
       beat: {
         type: "object",
-        description:
-          "The replacement beat, complete (it overwrites the old one — it is not merged). Requires `filePath` and `beatIndex`.",
+        description: "The replacement beat, complete (it overwrites the old one — it is not merged). Requires `filePath` and `beatIndex`.",
         additionalProperties: true,
       },
       autoGenerateMovie: {
