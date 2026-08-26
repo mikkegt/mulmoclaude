@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [1.14.0] - 2026-08-26
+
 ### Fixed
 
 #### Attachments over 1 MB never reached the server — every bridge (#2956)
@@ -62,7 +68,6 @@ it previously reached the agent as `"@bot"`. Released as `@mulmobridge/mastodon@
 - `@mulmobridge/chat-service@1.1.0`
 - `@mulmobridge/discord@1.1.0`
 - `@mulmobridge/mastodon@1.1.0`
-
 
 ### Added
 
@@ -208,12 +213,12 @@ it requested would skip records; both examples in `custom-view-remote.md` use
 Measured on real photographs through the shipped resize (rotate → fit inside →
 JPEG q72), at `imageMaxEdge: 384` and the default page limit of 50:
 
-| thumbnail | before | after |
-|---|---|---|
-| ≤17 KB | 50 shown, 0 placeholders | unchanged |
-| 18 KB | 48 shown, **2 placeholders** | 48 items, 0 placeholders |
-| 20 KB | 43 shown, **7 placeholders** | 43 items, 0 placeholders |
-| 25 KB | 34 shown, **16 placeholders** | 34 items, 0 placeholders |
+| thumbnail | before                        | after                    |
+| --------- | ----------------------------- | ------------------------ |
+| ≤17 KB    | 50 shown, 0 placeholders      | unchanged                |
+| 18 KB     | 48 shown, **2 placeholders**  | 48 items, 0 placeholders |
+| 20 KB     | 43 shown, **7 placeholders**  | 43 items, 0 placeholders |
+| 25 KB     | 34 shown, **16 placeholders** | 34 items, 0 placeholders |
 
 The same images render either way; what changes is whether the rest of the page
 arrives broken now or intact on the next scroll. A real photo at 384 px inlines
@@ -374,6 +379,7 @@ costs the same 3 s — only the give-up path pays the longer window.
 The error the turn died on is surfaced either way. It was being swallowed for a
 replay; when the replay is refused, it is emitted instead of the turn ending
 silently.
+
 #### `yarn dev` served the SPA instead of an HTML page outside `artifacts/html/` (#2928)
 
 `presentHtml`'s `path` form opens ANY page on disk, and the pane's iframe reaches

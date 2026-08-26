@@ -2,6 +2,19 @@
 
 Newest first. Each entry corresponds to a tagged release. Written in English.
 
+## @mulmoclaude/core@4.4.2 — 2026-08-26
+
+Documents the search-box relay for custom collection views (#2959, PR #2963) in the help file the agent reads when it authors one.
+
+- `assets/helps/custom-view.md` gains a **One search box** section for the two new `window.__MC_VIEW` fields — `searchQuery` (the live text in the app's own search box) and `onSearchQueryChange(cb)` (fired when the user types there). The point it makes to a view author is _do not build a second search box_: the app's box stays on screen while a custom view renders, so the user already expects it to drive the view. It also records the two behaviours an author has to know — `searchQuery` updates synchronously, so re-reading it inside a render is never a keystroke behind, while the callback is debounced at roughly 150 ms.
+- The runtime-contract header was corrected in the same pass. It said the bootstrap runs "before any of your scripts run", which was true in practice but did not say where the boundary is: the host injects at the very start of `<head>`, so anything in `<head>` or `<body>` sees `window.__MC_VIEW`, and only a `<script>` placed _before_ `<head>` would not.
+
+Help content is code as far as releases go — it reaches the agent through `files: ["dist", "assets"]`, so a docs-only change still has to be published. The runtime half of this feature is `@mulmoclaude/collection-plugin@4.4.0` and the host half is `mulmoclaude@1.14.0`; all three shipped together because the feature is incomplete without any one of them.
+
+Every workspace-internal declared range for `@mulmoclaude/core` was swept to `^4.4.2` in the same commit.
+
+📦 **npm**: [`@mulmoclaude/core@4.4.2`](https://www.npmjs.com/package/@mulmoclaude/core/v/4.4.2)
+
 ## @mulmoclaude/core@4.4.1 — 2026-08-25
 
 Fixes the scheduler's `interval` due-check, which counted from the current UTC midnight instead of the epoch (#2937, PR #2955). Because `msSinceMidnight` resets to 0 every day and never exceeds 24h, `rounded % intervalMs === 0` could only be true at 00:00 once the interval was a day or longer: every `interval` of 24h or more collapsed into "daily at 00:00" regardless of its value. A skill scheduled `interval 168h` ran 21 times in 21 days — seven times the intended rate, at seven times the API cost. Intervals that do not divide 24h evenly (`7h`, `50m`) drifted the same way, their final window of each day cut short by the midnight phase reset.
