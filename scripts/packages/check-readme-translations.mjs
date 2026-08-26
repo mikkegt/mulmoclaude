@@ -81,14 +81,21 @@ function parsePackedPaths(stdout, cwd) {
 /** `npm pack --dry-run --json` in `cwd`, as `{ code, stdout, stderr }`.
  *  `--ignore-scripts` keeps `prepack` hooks (which often run `yarn build` and
  *  pollute stdout with yarn's banner) from corrupting the JSON. */
-// Windows ships npm as `npm.cmd`, and `spawn` without a shell does not apply
-// PATHEXT — so a bare "npm" is ENOENT there. Naming the file is precise and
-// keeps the arguments off a command line entirely, unlike `shell: true`.
-const NPM_BIN = process.platform === "win32" ? "npm.cmd" : "npm";
+// Windows ships npm as `npm.cmd`, and two separate things stop a bare
+// `spawn("npm")` from reaching it: `spawn` without a shell does not apply
+// PATHEXT (ENOENT), and since the CVE-2024-27980 fix Node refuses to execute a
+// `.cmd` at all unless a shell is asked for (EINVAL). So Windows needs both the
+// explicit name and `shell: true`. The usual objection to `shell: true` —
+// interpolating an untrusted value into a command line — does not apply: every
+// argument here is a literal constant, and `cwd` is passed as an option rather
+// than as part of the command. POSIX keeps the shell-free path unchanged.
+const IS_WINDOWS = process.platform === "win32";
+const NPM_BIN = IS_WINDOWS ? "npm.cmd" : "npm";
+const PACK_ARGS = ["pack", "--dry-run", "--json", "--ignore-scripts"];
 
 async function runPack(cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn(NPM_BIN, ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(NPM_BIN, PACK_ARGS, { cwd, stdio: ["ignore", "pipe", "pipe"], shell: IS_WINDOWS });
     const stdout = [];
     const stderr = [];
     child.stdout.on("data", (chunk) => stdout.push(chunk));
