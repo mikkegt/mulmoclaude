@@ -27,7 +27,7 @@ const PACKAGES_ROOT = path.resolve(fileURLToPath(new URL(".", import.meta.url)),
 // Match README translations with a BCP-47-ish suffix (ja, ja-JP,
 // pt-BR, etc.). README.md itself is excluded — that's the canonical
 // one and ships by default.
-const TRANSLATION_RE = /^README\.[a-z]{2}(-[A-Z]{2})?\.md$/;
+export const TRANSLATION_RE = /^README\.[a-z]{2}(-[A-Z]{2})?\.md$/;
 
 async function findPackageJsons(root) {
   const out = [];
@@ -48,6 +48,21 @@ async function findPackageJsons(root) {
 // of file entries the tarball would contain. The output prints to
 // stderr when `--dry-run` is used — parse stdout, which carries the
 // JSON.
+// The one packed package out of `npm pack --json`, whatever shape npm used.
+// npm <= 11 answered an ARRAY with one entry per packed package; npm 12 answers
+// an OBJECT keyed by package name. Reading `parsed[0]` on the object yields
+// `undefined`, so the previous version of this check saw an empty file list for
+// every package and reported each of their translations as missing — the gate
+// was red on a tarball that had shipped the file all along.
+export function packEntry(parsed) {
+  const candidate = Array.isArray(parsed) ? parsed[0] : isRecord(parsed) ? Object.values(parsed)[0] : null;
+  return isRecord(candidate) && Array.isArray(candidate.files) ? candidate : null;
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+
 async function packedFiles(cwd) {
   return new Promise((resolve, reject) => {
     // `--ignore-scripts` keeps `prepack` hooks (which often run
@@ -69,11 +84,15 @@ async function packedFiles(cwd) {
       }
       try {
         const parsed = JSON.parse(Buffer.concat(stdout).toString("utf8"));
-        // `npm pack --json` returns an array with one entry per
-        // package (we always pack exactly one). `.files` is the
-        // array of included-file descriptors.
-        const files = parsed[0]?.files ?? [];
-        resolve(files.map((entry) => entry.path));
+        const entry = packEntry(parsed);
+        // Not "no files" — an unrecognised shape. Answering `[]` here would
+        // report every translation as missing, which is exactly what npm 12's
+        // change to this output did to the previous version of this check.
+        if (!entry) {
+          reject(new Error(`npm pack --json returned an unrecognised shape in ${cwd}; cannot verify the tarball`));
+          return;
+        }
+        resolve((entry.files ?? []).map((file) => file.path));
       } catch (err) {
         reject(err);
       }
@@ -97,33 +116,40 @@ async function auditPackage(packageJsonPath) {
   return { name: pkg.name ?? path.basename(dir), onDiskTranslations, missing };
 }
 
-const packageJsons = await findPackageJsons(PACKAGES_ROOT);
-const results = [];
-for (const pkgJson of packageJsons) {
-  try {
-    const result = await auditPackage(pkgJson);
-    if (result.onDiskTranslations.length > 0) results.push({ ...result, packageJsonPath: pkgJson });
-  } catch (err) {
-    console.error(`[check:readmes] error auditing ${pkgJson}: ${err instanceof Error ? err.message : String(err)}`);
+async function main() {
+  const packageJsons = await findPackageJsons(PACKAGES_ROOT);
+  const results = [];
+  for (const pkgJson of packageJsons) {
+    try {
+      const result = await auditPackage(pkgJson);
+      if (result.onDiskTranslations.length > 0) results.push({ ...result, packageJsonPath: pkgJson });
+    } catch (err) {
+      console.error(`[check:readmes] error auditing ${pkgJson}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+
+  if (results.length === 0) {
+    console.log(`[check:readmes] no packages have README translations on disk. Nothing to check.`);
+    return 0;
+  }
+
+  const problems = results.filter((r) => r.missing.length > 0);
+  console.log(`[check:readmes] scanned ${results.length} packages with README translations:`);
+  for (const r of results) {
+    const status = r.skipped ? `skipped (${r.skipped})` : r.missing.length === 0 ? "OK" : `MISSING: ${r.missing.join(", ")}`;
+    console.log(`  ${r.name} — ${r.onDiskTranslations.join(", ")} — ${status}`);
+  }
+
+  if (problems.length > 0) {
+    console.error(`\n[check:readmes] FAIL — ${problems.length} package(s) ship README translations on disk that are excluded from the tarball.`);
+    console.error(`Check .npmignore and the 'files' array in the package.json of each flagged package.`);
+    return 1;
+  }
+
+  return 0;
 }
 
-if (results.length === 0) {
-  console.log(`[check:readmes] no packages have README translations on disk. Nothing to check.`);
-  process.exit(0);
+// Only run the CLI when invoked directly, so tests can import the helpers.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  process.exitCode = await main();
 }
-
-const problems = results.filter((r) => r.missing.length > 0);
-console.log(`[check:readmes] scanned ${results.length} packages with README translations:`);
-for (const r of results) {
-  const status = r.skipped ? `skipped (${r.skipped})` : r.missing.length === 0 ? "OK" : `MISSING: ${r.missing.join(", ")}`;
-  console.log(`  ${r.name} — ${r.onDiskTranslations.join(", ")} — ${status}`);
-}
-
-if (problems.length > 0) {
-  console.error(`\n[check:readmes] FAIL — ${problems.length} package(s) ship README translations on disk that are excluded from the tarball.`);
-  console.error(`Check .npmignore and the 'files' array in the package.json of each flagged package.`);
-  process.exit(1);
-}
-
-process.exit(0);
