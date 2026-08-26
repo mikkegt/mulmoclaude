@@ -71,7 +71,14 @@ const dispatched = computed(() => calls.map((c) => c.kind));
     </header>
 
     <div :style="frameStyle" class="h-[720px] rounded-lg border border-gray-300 bg-white overflow-hidden">
-      <ShadowFrame v-if="inShadow" :key="`shadow-${narrow}`" :css="pluginCss" :runtime="runtime" :component="View" :component-props="{ selectedResult: result }" />
+      <ShadowFrame
+        v-if="inShadow"
+        :key="`shadow-${narrow}`"
+        :css="pluginCss"
+        :runtime="runtime"
+        :component="View"
+        :component-props="{ selectedResult: result }"
+      />
       <RuntimeProvider v-else :runtime="runtime">
         <View :selected-result="result" />
       </RuntimeProvider>
