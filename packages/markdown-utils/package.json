@@ -35,16 +35,16 @@
   "dependencies": {
     "@mulmoclaude/common": "^1.2.0",
     "js-yaml": "^5.2.3",
-    "marked": "^18.0.7"
+    "marked": "^18.0.11"
   },
   "peerDependencies": {
     "mermaid": "^11.16.1",
     "vue": "^3.5.0"
   },
   "devDependencies": {
-    "mermaid": "^11.16.1",
+    "mermaid": "^11.17.2",
     "typescript": "^6.0.3",
-    "vue": "^3.5.40"
+    "vue": "^3.5.41"
   },
   "homepage": "https://github.com/receptron/mulmoclaude/tree/main/packages/markdown-utils#readme",
   "repository": {
