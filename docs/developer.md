@@ -6,7 +6,7 @@ Reference for contributors hacking on MulmoClaude. End-user instructions live in
 
 ## Contributing — please open an issue with a plan first
 
-Thanks for wanting to contribute! Please read this section before sending a pull request — **we cannot accept large or AI-generated pull requests from outside contributors**, and unsolicited ones will be closed without a detailed review. The flow we ask for instead is:
+Thanks for wanting to contribute! Please read this section before sending a pull request — **we do not accept pull requests from outside the development team, regardless of size**, and unsolicited ones are commented on and closed automatically. **Issues are a different story — bug reports and feature requests are always welcome, and an issue is the way to get a change in.** The flow we ask for instead is:
 
 1. **Open a GitHub issue describing the problem and a proposed plan.** A few paragraphs are enough: what's wrong (or what's missing), the approach you have in mind, the files you expect to touch, and any open questions. The files under [`plans/`](../plans/) are good references for the level of detail we want.
 2. **Discuss the plan in the issue thread.** We may suggest scope adjustments, point out existing helpers or in-flight refactors that overlap, or surface constraints that are hard to see from the outside, such as security boundaries or deprecation paths. This is usually a short back-and-forth.
@@ -27,26 +27,28 @@ AI coding assistants make it easy to generate large, polished-looking diffs in m
 
 This is not about screening out AI-assisted work — the maintainer who drafts the pull request will often be using an agent too. The point is that **the plan is what we agree on, and the resulting code is owned by whoever lands it**. Locking that ownership boundary at the plan keeps responsibility clear and review focused on the parts that need human judgement.
 
-### When you can skip the plan
+### There is no small-diff exemption
 
-A direct pull request is welcome for:
+Every change from outside the development team starts as an issue — typos, copy fixes,
+documentation tweaks and dependency bumps included. A one-line fix still needs a maintainer to
+judge whether it is the right fix, and routing it through an issue costs you less than writing a
+pull request that will be closed.
 
-- Typos, copy fixes, documentation tweaks
-- Dependency version bumps
-- Single-file bug fixes with an obvious root cause and a matching test, **10 lines of diff or fewer (additions + deletions, inclusive)**
-- Anything a maintainer or a continuous integration bot explicitly asks for in a review comment
+The one exception is a change **a maintainer or a continuous integration bot explicitly asked
+for in a review comment on your existing pull request** — that request is the agreement, so
+there is nothing left to negotiate in an issue.
 
-Anything larger than that should start as an issue. If you are not sure, opening an issue first is always cheaper than writing a pull request that will not be accepted. Thanks for understanding.
+If you are not sure, opening an issue first is always cheaper. Thanks for understanding.
 
 ### Automated triage on pull requests
 
 The `.github/workflows/pr_triage.yaml` workflow runs on every PR and enforces the rule above mechanically:
 
-- PRs from maintainers and allowlisted bots fall through. The current allowlist is `isamu`, `snakajima`, `ystknsh`, `yuki0627`, `dependabot[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`. To add a maintainer, edit the `MAINTAINERS` list in the workflow and the same list here.
-- PRs from anyone else are accepted automatically when the diff is ≤ 10 lines (additions + deletions).
-- Larger non-maintainer PRs receive a templated comment that links back to this section and asks for an issue first — **the issue body's first three lines should be a compact summary of the problem and the proposed plan** so a maintainer can decide whether to engage at a glance — and the PR is closed.
-
-The line cap and the documentation are intentionally kept in lock-step. If the cap moves, update both the workflow's `LINE_LIMIT` and the bullet above in the same commit.
+- PRs from maintainers and allowlisted bots pass through untouched. The current allowlist is `isamu`, `snakajima`, `ystknsh`, `yuki0627`, `dependabot[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`. To add a maintainer, edit the `MAINTAINERS` list in the workflow and the same list here, in the same commit.
+- **Every other PR gets a templated comment linking back to this section and is closed. There is no small-diff exemption.** The comment asks for an issue instead — **its first three lines should be a compact summary of the problem and the proposed plan** so a maintainer can decide whether to engage at a glance.
+- The guard runs on PRs against **any** branch, not just `main`: a PR opened against a long-lived branch is exactly as unreviewable as one against `main`.
+- An event a maintainer triggered stands the automation down, so retitling an outside PR you have decided to keep does not re-close it.
+- Re-closing a reopened PR is silent — the workflow recognises its own earlier comment and does not post a second copy.
 
 ---
 
