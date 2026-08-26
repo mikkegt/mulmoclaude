@@ -30,20 +30,16 @@ const UNREADABLE_SHAPES: [string, unknown][] = [
 
 const result = (over: Partial<AuditResult>): AuditResult => ({ name: "@scope/pkg", onDiskTranslations: ["README.ja.md"], missing: [], ...over });
 
+const READABLE_SHAPES: [string, unknown][] = [
+  ["the array shape (npm <= 11)", [{ name: "@scope/pkg", files }]],
+  ["the object-keyed-by-name shape (npm 12)", { "@scope/pkg": { name: "@scope/pkg", files } }],
+];
+
 describe("packEntry — whichever shape npm used", () => {
-  it("reads the array shape (npm <= 11)", () => {
-    assert.deepEqual(packEntry([{ name: "@scope/pkg", files }])?.files, files);
-  });
-
-  it("reads the object-keyed-by-name shape (npm 12)", () => {
-    assert.deepEqual(packEntry({ "@scope/pkg": { name: "@scope/pkg", files } })?.files, files);
-  });
-
-  // The bug, stated as a test: the object shape used to yield no files at all.
-  it("does not lose the file list on the object shape", () => {
-    const entry = packEntry({ "@mulmobridge/slack": { files } });
-    assert.ok(entry, "an object-shaped result must still resolve to an entry");
-    assert.ok(entry.files.map((file) => file.path).includes("README.ja.md"), "a translation present in the tarball must not read as missing");
+  READABLE_SHAPES.forEach(([label, input]) => {
+    // The bug, stated as a test: the object shape used to yield no files at all,
+    // so a translation the tarball ships read as missing.
+    it(`keeps the file list on ${label}`, () => assert.deepEqual(packEntry(input)?.files, files));
   });
 
   // An unrecognised shape must be distinguishable from "packed nothing" — the
@@ -105,35 +101,36 @@ describe("statusLine", () => {
 // unit tests above pin `classify`, but the defect was that nothing CALLED it on
 // the error path. This runs the real CLI with a fake `npm` on PATH and asserts
 // the process exit code, which is all CI ever looks at.
-describe("the CLI itself (end to end)", () => {
-  const SCRIPT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../scripts/packages/check-readme-translations.mjs");
+const SCRIPT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../scripts/packages/check-readme-translations.mjs");
 
-  /** Run the checker with a stub `npm` that prints `stdout`, and return its exit code. */
-  function runWithFakeNpm(stdout: string): number {
-    const bin = mkdtempSync(path.join(tmpdir(), "fake-npm-"));
-    try {
-      const fake = path.join(bin, "npm");
-      writeFileSync(fake, `#!/bin/bash\ncat <<'JSON'\n${stdout}\nJSON\n`);
-      chmodSync(fake, 0o755);
-      execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, stdio: "pipe" });
-      return 0;
-    } catch (err) {
-      const { status } = err as { status?: number };
-      return typeof status === "number" ? status : -1;
-    } finally {
-      rmSync(bin, { recursive: true, force: true });
-    }
+/** Run the real checker with a stub `npm` that prints `packJson`, and return the
+ *  process exit code — which is all CI ever looks at. */
+function exitCodeWithFakeNpm(packJson: string): number {
+  const bin = mkdtempSync(path.join(tmpdir(), "fake-npm-"));
+  try {
+    const fake = path.join(bin, "npm");
+    writeFileSync(fake, `#!/bin/bash\ncat <<'JSON'\n${packJson}\nJSON\n`);
+    chmodSync(fake, 0o755);
+    execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, stdio: "pipe" });
+    return 0;
+  } catch (err) {
+    const { status } = err as { status?: number };
+    return typeof status === "number" ? status : -1;
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
   }
+}
 
-  it("exits non-zero when npm's output cannot be read", () => {
-    assert.equal(runWithFakeNpm("{}"), 1, "an unreadable pack output must fail the gate, not pass it");
-  });
+const shipped = (...paths: string[]) => JSON.stringify({ "@mulmobridge/slack": { files: paths.map((filePath) => ({ path: filePath })) } });
 
-  it("exits non-zero when the tarball genuinely omits a translation", () => {
-    assert.equal(runWithFakeNpm('{"@mulmobridge/slack":{"files":[{"path":"README.md"}]}}'), 1);
-  });
+const CLI_CASES: { label: string; packJson: string; exitCode: number }[] = [
+  { label: "npm's output cannot be read", packJson: "{}", exitCode: 1 },
+  { label: "the tarball genuinely omits a translation", packJson: shipped("README.md"), exitCode: 1 },
+  { label: "the tarball ships the translation", packJson: shipped("README.md", "README.ja.md"), exitCode: 0 },
+];
 
-  it("exits zero when the tarball ships the translation", () => {
-    assert.equal(runWithFakeNpm('{"@mulmobridge/slack":{"files":[{"path":"README.md"},{"path":"README.ja.md"}]}}'), 0);
+describe("the CLI itself (end to end)", () => {
+  CLI_CASES.forEach(({ label, packJson, exitCode }) => {
+    it(`exits ${exitCode} when ${label}`, () => assert.equal(exitCodeWithFakeNpm(packJson), exitCode));
   });
 });
