@@ -63,41 +63,34 @@ function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
 
-async function packedFiles(cwd) {
+/** The file paths inside `stdout`'s pack result. Throws rather than answering
+ *  `[]` when the shape is unreadable — the caller must be able to tell "this
+ *  tarball ships nothing" from "we never managed to read this tarball". */
+function parsePackedPaths(stdout, cwd) {
+  const entry = packEntry(JSON.parse(stdout));
+  if (!entry) throw new Error(`npm pack --json returned an unrecognised shape in ${cwd}; cannot verify the tarball`);
+  return (entry.files ?? []).map((file) => file.path);
+}
+
+/** `npm pack --dry-run --json` in `cwd`, as `{ code, stdout, stderr }`.
+ *  `--ignore-scripts` keeps `prepack` hooks (which often run `yarn build` and
+ *  pollute stdout with yarn's banner) from corrupting the JSON. */
+async function runPack(cwd) {
   return new Promise((resolve, reject) => {
-    // `--ignore-scripts` keeps `prepack` hooks (which often run
-    // `yarn build` and pollute stdout with yarn's banner) from
-    // corrupting the JSON output we're about to parse.
-    const child = spawn("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawn("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const stdout = [];
     const stderr = [];
     child.stdout.on("data", (chunk) => stdout.push(chunk));
     child.stderr.on("data", (chunk) => stderr.push(chunk));
     child.once("error", reject);
-    child.once("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`npm pack failed in ${cwd} (exit ${code})\n${Buffer.concat(stderr).toString("utf8")}`));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(Buffer.concat(stdout).toString("utf8"));
-        const entry = packEntry(parsed);
-        // Not "no files" — an unrecognised shape. Answering `[]` here would
-        // report every translation as missing, which is exactly what npm 12's
-        // change to this output did to the previous version of this check.
-        if (!entry) {
-          reject(new Error(`npm pack --json returned an unrecognised shape in ${cwd}; cannot verify the tarball`));
-          return;
-        }
-        resolve((entry.files ?? []).map((file) => file.path));
-      } catch (err) {
-        reject(err);
-      }
-    });
+    child.once("close", (code) => resolve({ code, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") }));
   });
+}
+
+async function packedFiles(cwd) {
+  const { code, stdout, stderr } = await runPack(cwd);
+  if (code !== 0) throw new Error(`npm pack failed in ${cwd} (exit ${code})\n${stderr}`);
+  return parsePackedPaths(stdout, cwd);
 }
 
 async function auditPackage(packageJsonPath) {
@@ -116,37 +109,72 @@ async function auditPackage(packageJsonPath) {
   return { name: pkg.name ?? path.basename(dir), onDiskTranslations, missing };
 }
 
-async function main() {
-  const packageJsons = await findPackageJsons(PACKAGES_ROOT);
+/** Audit every package, keeping only those that have translations on disk.
+ *  A package that could not be VERIFIED is kept too, carrying `error` — the
+ *  gate has to fail on it, not drop it from the roster. */
+async function auditAll(packageJsons) {
   const results = [];
-  for (const pkgJson of packageJsons) {
+  for (const packageJsonPath of packageJsons) {
     try {
-      const result = await auditPackage(pkgJson);
-      if (result.onDiskTranslations.length > 0) results.push({ ...result, packageJsonPath: pkgJson });
+      const result = await auditPackage(packageJsonPath);
+      if (result.onDiskTranslations.length > 0) results.push({ ...result, packageJsonPath });
     } catch (err) {
-      console.error(`[check:readmes] error auditing ${pkgJson}: ${err instanceof Error ? err.message : String(err)}`);
+      const dir = path.dirname(packageJsonPath);
+      const onDisk = (await readdir(dir).catch(() => [])).filter((name) => TRANSLATION_RE.test(name));
+      results.push({
+        name: path.basename(dir),
+        onDiskTranslations: onDisk,
+        missing: [],
+        error: err instanceof Error ? err.message : String(err),
+        packageJsonPath,
+      });
     }
   }
+  return results;
+}
 
+/** One roster line per package: what it has on disk and how it ended up. */
+export function statusLine(result) {
+  if (result.error) return `ERROR: ${result.error}`;
+  if (result.skipped) return `skipped (${result.skipped})`;
+  return result.missing.length === 0 ? "OK" : `MISSING: ${result.missing.join(", ")}`;
+}
+
+/** Split a roster into the two reasons the gate can fail. `unverified` is
+ *  deliberately separate from `missing`: "the tarball does not ship this file"
+ *  and "we could not read the tarball at all" need different fixes, and
+ *  collapsing the second into a pass is how a shape change silences the gate. */
+export function classify(results) {
+  return {
+    missing: results.filter((result) => !result.error && result.missing.length > 0),
+    unverified: results.filter((result) => result.error),
+  };
+}
+
+function report(results) {
+  const { missing, unverified } = classify(results);
+  console.log(`[check:readmes] scanned ${results.length} packages with README translations:`);
+  results.forEach((result) => console.log(`  ${result.name} — ${result.onDiskTranslations.join(", ")} — ${statusLine(result)}`));
+  if (missing.length === 0 && unverified.length === 0) return 0;
+
+  if (missing.length > 0) {
+    console.error(`\n[check:readmes] FAIL — ${missing.length} package(s) ship README translations on disk that are excluded from the tarball.`);
+    console.error(`Check .npmignore and the 'files' array in the package.json of each flagged package.`);
+  }
+  if (unverified.length > 0) {
+    console.error(`\n[check:readmes] FAIL — ${unverified.length} package(s) could not be verified at all.`);
+    console.error(`This is not "the translations are fine" — the tarball was never read. Check the npm pack output above.`);
+  }
+  return 1;
+}
+
+async function main() {
+  const results = await auditAll(await findPackageJsons(PACKAGES_ROOT));
   if (results.length === 0) {
     console.log(`[check:readmes] no packages have README translations on disk. Nothing to check.`);
     return 0;
   }
-
-  const problems = results.filter((r) => r.missing.length > 0);
-  console.log(`[check:readmes] scanned ${results.length} packages with README translations:`);
-  for (const r of results) {
-    const status = r.skipped ? `skipped (${r.skipped})` : r.missing.length === 0 ? "OK" : `MISSING: ${r.missing.join(", ")}`;
-    console.log(`  ${r.name} — ${r.onDiskTranslations.join(", ")} — ${status}`);
-  }
-
-  if (problems.length > 0) {
-    console.error(`\n[check:readmes] FAIL — ${problems.length} package(s) ship README translations on disk that are excluded from the tarball.`);
-    console.error(`Check .npmignore and the 'files' array in the package.json of each flagged package.`);
-    return 1;
-  }
-
-  return 0;
+  return report(results);
 }
 
 // Only run the CLI when invoked directly, so tests can import the helpers.

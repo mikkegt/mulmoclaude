@@ -21,3 +21,20 @@ export const TRANSLATION_RE: RegExp;
  *  an object keyed by package name (npm 12). Null when the value is neither —
  *  which the caller must treat as "cannot verify", never as "no files". */
 export function packEntry(parsed: unknown): PackEntry | null;
+
+/** One package's audit result. `error` set = the tarball could never be read,
+ *  which is a gate failure in its own right, not a pass. */
+export interface AuditResult {
+  name: string;
+  onDiskTranslations: string[];
+  missing: string[];
+  skipped?: string;
+  error?: string;
+}
+
+/** The roster line for one result: `OK`, `skipped (…)`, `MISSING: …`, `ERROR: …`. */
+export function statusLine(result: AuditResult): string;
+
+/** The two distinct reasons the gate fails: translations absent from a tarball
+ *  that WAS read, and packages whose tarball could not be read at all. */
+export function classify(results: AuditResult[]): { missing: AuditResult[]; unverified: AuditResult[] };
