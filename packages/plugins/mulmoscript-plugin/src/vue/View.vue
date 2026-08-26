@@ -92,20 +92,10 @@
          beat type; the list is where the media lives (generate audio, render an image, open a
          clip), which the editor has no equivalent for — so neither replaces the other. -->
     <div v-if="canEditBeats" class="flex shrink-0 gap-1 px-2 pt-1 text-[11px]">
-      <button
-        type="button"
-        :class="beatPaneTabClass(beatPane === 'edit')"
-        data-testid="mulmo-script-tab-edit"
-        @click="beatPane = 'edit'"
-      >
+      <button type="button" :class="beatPaneTabClass(beatPane === 'edit')" data-testid="mulmo-script-tab-edit" @click="beatPane = 'edit'">
         {{ m.editTab }}
       </button>
-      <button
-        type="button"
-        :class="beatPaneTabClass(beatPane === 'media')"
-        data-testid="mulmo-script-tab-media"
-        @click="beatPane = 'media'"
-      >
+      <button type="button" :class="beatPaneTabClass(beatPane === 'media')" data-testid="mulmo-script-tab-media" @click="beatPane = 'media'">
         {{ m.mediaTab }}
       </button>
     </div>
@@ -726,7 +716,12 @@ function commitScript(next: MulmoScript): void {
 // interactive deck editor (@mulmocast/beat-editor). Mixed scripts (any non-slide
 // beat) fall back to the existing list. The debounce + flush-on-unmount live
 // in the composable.
-const { canEditBeats, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites } = useDeckEditor({ api, filePath, effectiveScript, commitScript });
+const { canEditBeats, deckScriptInput, onDeckUpdate, flushPendingDeckSave, watchForeignWrites } = useDeckEditor({
+  api,
+  filePath,
+  effectiveScript,
+  commitScript,
+});
 
 /**
  * Which pane the beats are shown in.

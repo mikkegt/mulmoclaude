@@ -177,7 +177,7 @@ describe("hasEditableBeats", () => {
   });
 
   it("is true for a markdown script — the case that used to fall through to a read-only list", () => {
-    assert.equal(hasEditableBeats({ beats: [{ image: { type: "markdown", markdown: "# hi" } } ] }), true);
+    assert.equal(hasEditableBeats({ beats: [{ image: { type: "markdown", markdown: "# hi" } }] }), true);
   });
 
   it("is true for a mixed script", () => {
