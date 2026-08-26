@@ -55,7 +55,10 @@ collection's view-mode selector automatically.
 
 ## The runtime contract — `window.__MC_VIEW`
 
-The host injects a bootstrap into your page **before any of your scripts run**:
+The host injects a bootstrap at the very start of your `<head>`, so it runs
+**before any script in your `<head>` or `<body>`** — write your view normally
+and `window.__MC_VIEW` is always there. (A `<script>` placed _before_ `<head>`
+would run ahead of it and see no `__MC_VIEW`; there is no reason to write one.)
 
 ```js
 window.__MC_VIEW = {

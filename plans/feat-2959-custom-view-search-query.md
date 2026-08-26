@@ -38,17 +38,23 @@ typist's cursor across an async hop, and adds a new class of message: today's
 `mc-open-item` / `mc-start-chat` are *user-gesture proposals*, not silent
 mutations of host UI state. A view that wants its own input keeps it local.
 
-**D2 — the initial value travels by postMessage, never in the srcdoc.** The
+**D2 — the initial value travels over the channel, never in the srcdoc.** The
 srcdoc is built only inside `load()` (`CollectionCustomView.vue`), which
 re-mints a scoped token and reloads the iframe. Baking `searchQuery` into the
 boot JSON would mean a token mint + full iframe reload **per keystroke**. So the
-boot JSON always carries `searchQuery: ""` and the host pushes the live value.
+boot JSON always carries `searchQuery: ""` and the host seeds the value when the frame claims its port.
 
-**D3 — push once on iframe `load`, then on every change.** A message posted
-before the bootstrap has parsed is lost, so the relay hooks the iframe's `load`
-event as well as the watcher. The load-time push is skipped for an empty query
-(nothing to say), which also keeps a freshly-opened view from taking a spurious
-callback.
+**D3 — the channel is a MessagePort, and the first claim on a fresh frame wins.**
+*(Revised during review — see the note at the end.)* A window post must name a
+target origin, and the frame's origin is opaque, so the only usable target is
+`"*"` — which keeps delivering after a view navigates ITSELF elsewhere, handing
+the user's typed text to whatever document lands there. So the bootstrap creates
+a `MessageChannel`, keeps `port1`, and hands `port2` up in an `mc-view-ready`
+ping; a port belongs to the document that received it, so navigation severs it.
+A LATER claim means the document changed, and since no injected secret can
+identify it (a view can forward anything it holds), the host reinstalls the view
+it controls rather than choosing — bounded, so a reloading view cannot mint
+tokens forever. The rule is `searchChannelPolicy.ts`.
 
 **D4 — `v.searchQuery` updates immediately; callbacks are debounced (150 ms).**
 Same contract as `onChange` ("already debounced — don't add your own throttle"),
@@ -77,12 +83,15 @@ preview alone would break that invariant.
 
 | File | Change |
 | --- | --- |
-| `src/utils/html/customViewSrcdoc.ts` | boot JSON gains `searchQuery: ""`; bootstrap gains an `mc-search-query` listener + `v.onSearchQueryChange(cb)` |
-| `packages/plugins/collection-plugin/src/vue/components/CollectionCustomView.vue` | new `searchQuery` prop; relay on change (deduped) and on iframe `load` |
+| `src/utils/html/customViewSrcdoc.ts` | boot JSON gains `searchQuery: ""`; bootstrap opens a `MessageChannel`, hands `port2` up as `mc-view-ready`, and exposes `v.onSearchQueryChange(cb)` |
+| `packages/plugins/collection-plugin/src/vue/components/CollectionCustomView.vue` | new `searchQuery` prop; accepts the port, seeds it, relays on change |
+| `packages/plugins/collection-plugin/src/vue/searchChannelPolicy.ts` | **new** — `decideSearchChannelClaim`, the pure connect / reinstall / giveUp rule |
 | `packages/plugins/collection-plugin/src/vue/components/CollectionView.vue` | pass `:search-query="searchQuery"` to `CollectionCustomView` |
 | `packages/plugins/collection-plugin/src/vue/components/CollectionToolbar.vue` | hide the `shown / total` count when a `custom:` view is active (D5) |
 | `packages/core/assets/helps/custom-view.md` | document the contract + a worked example |
-| `test/utils/html/test_customViewSrcdoc.ts` | shape assertions + behavioural tests that run the bootstrap in `node:vm` |
+| `test/utils/html/test_customViewSrcdoc.ts` | shape assertions + behavioural tests that execute the bootstrap against a fake window |
+| `test/plugins/collection/test_searchChannelPolicy.ts` | **new** — exhaustive cover of the claim rule |
+| `e2e/tests/collection-custom-view-search.spec.ts` | **new** — browser tests: seed, evict a claimant, reconnect on reload |
 
 ## 4. Scoping — it closes per collection, for free
 
@@ -101,9 +110,45 @@ cannot land in the next view.
 ## 5. Verification
 
 - `yarn format` → `yarn lint` → `yarn typecheck` → `yarn build` → `yarn test`.
-- Bootstrap behaviour is unit-tested by evaluating the injected script in
-  `node:vm` against a fake `window`/`document` — foreign slug ignored,
-  non-parent source ignored, debounce collapses a burst, unsubscribe works,
-  `v.searchQuery` tracks immediately.
+- Bootstrap behaviour is unit-tested by executing the injected script against a
+  fake `window` / `document` / clock — foreign slug ignored, non-parent source
+  ignored, debounce collapses a burst, unsubscribe works, `v.searchQuery` tracks
+  immediately, and a search query posted on the WINDOW is refused.
+- The claim rule has its own exhaustive unit tests (mutation-checked 6/6); the
+  browser tests cover what a browser can observe deterministically.
 - Manual: a collection with a custom view — type in the standard box, confirm
   the view reacts; switch collections and confirm the query clears.
+
+
+---
+
+## What review changed (iterations 1–4)
+
+The design above survived; **D3 did not**, and the record should say so rather
+than read as if the first attempt was right.
+
+1. **The `"*"` window post leaked.** A custom view may navigate its own frame,
+   and `postMessage(…, "*")` keeps delivering to whatever replaces it —
+   reproduced: the landing page received
+   `{"type":"mc-search-query","query":"secret-term"}`. Fixed with a MessagePort.
+2. **First-claim-wins then broke self-reload** — a view calling
+   `location.reload()` was refused its new port and went deaf.
+3. **A `handshakeNonce` did not fix that**, because anything injected into a
+   view can be forwarded by that view to the page it navigates to. No injected
+   secret can identify the document in the frame. Replaced by: reinstall the
+   view on any later claim, and never decide who is asking.
+4. **A vacuous test.** The e2e written to cover the reinstall budget passed with
+   the budget at 3 *and* at 9999 — a probe can order messages inside one
+   document but not across a frame swap. Deleted; the rule was extracted to
+   `searchChannelPolicy.ts` and covered deterministically instead.
+
+**Known limit, costed not fixed:** the bootstrap is injected at the start of
+`<head>`, so a `<script>` placed *before* `<head>` in the view's HTML runs
+first. Browser-checked: such a script gains nothing (it is the view's own
+document, which is entitled to the query, and navigation still severs the port)
+— but by claiming first it makes the real bootstrap's claim look like a
+re-claim, so that view spends its own reinstall budget and ends up with no
+search channel. Moving the injection ahead of `<head>` would also move the CSP
+`<meta>`, which is the security boundary for the entire feature and is honoured
+only as a child of `head`. Not worth that risk for a view that harms only
+itself; the authoring doc now states the ordering accurately instead.
