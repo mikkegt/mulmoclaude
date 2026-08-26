@@ -57,6 +57,7 @@ export {
   type FlagFilterMode,
   type FlagFilterState,
 } from "./collectionViewMode";
+export { decideSearchChannelClaim, MAX_FRAME_RECLAIMS, type SearchChannelAction } from "./searchChannelPolicy";
 export { default as CollectionRecordModal } from "./components/CollectionRecordModal.vue";
 export { default as CollectionEmbedView } from "./components/CollectionEmbedView.vue";
 export { default as CollectionCalendarView } from "./components/CollectionCalendarView.vue";

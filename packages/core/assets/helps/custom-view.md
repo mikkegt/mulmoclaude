@@ -344,8 +344,14 @@ What you need to know:
 - **Reloading your own view is fine.** `location.reload()` makes the host
   reinstall the view and hand it a fresh channel, seeded with whatever is in
   the search box — so the query you see after a reload is the current one, not
-  an empty string. (A view that reloads itself over and over stops being
-  reconnected, so use `onChange` for refreshes.)
+  an empty string.
+- **Replacing the document is allowed a few times, not endlessly.** Each
+  reinstall — after a reload or after another page claims the channel — costs
+  the host a rebuild, so it grants **at most 3** between one user-initiated
+  view change and the next (switching view or collection resets the budget).
+  Past that your view still renders and still reads its data; only the search
+  channel stays disconnected, and `searchQuery` stops updating. Use `onChange`
+  to refresh rather than reloading the frame, and you will never reach it.
 - **One direction only.** You read the user's query; you cannot write the app's
   search box from view code. If your view needs a filter the box can't express
   (a date range, a facet), add that control yourself and combine it with

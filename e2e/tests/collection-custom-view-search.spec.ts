@@ -32,6 +32,10 @@ const DETAIL = {
 // navigates the frame away — a custom view is allowed to do that, and the
 // search relay must not follow it (see the navigation test below).
 const VIEW_HTML = `<!doctype html><html><head></head><body>
+<div id="marker">view</div>
+<div id="gen"></div>
+<div id="conn"></div>
+<div id="caught"></div>
 <div id="query">unset</div>
 <div id="calls">0</div>
 <button id="go" type="button">leave</button>
@@ -41,6 +45,14 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
 <script>
   var view = window.__MC_VIEW;
   var calls = 0;
+  // Fresh per document, so a test can tell one generation of this frame from
+  // the next — the marker text alone is identical across a reload.
+  document.getElementById('gen').textContent = String(Math.random());
+  // "connected" appears only once the host hands THIS document the search
+  // channel and seeds it — the signal that a reinstall completed.
+  window.addEventListener('message', function (event) {
+    document.getElementById('caught').textContent += JSON.stringify(event.data) + ';';
+  });
   function paint(query) {
     document.getElementById('query').textContent = query ? query : '(empty)';
   }
@@ -48,6 +60,7 @@ const VIEW_HTML = `<!doctype html><html><head></head><body>
   view.onSearchQueryChange(function (query) {
     calls++;
     document.getElementById('calls').textContent = String(calls);
+    document.getElementById('conn').textContent = 'connected';
     paint(query);
   });
   document.getElementById('again').addEventListener('click', function () {
@@ -209,6 +222,9 @@ test.describe("standard search box → custom view", () => {
     await expect(viewFrame(page).locator("#query")).toHaveText("alpha");
 
     await viewFrame(page).locator("#again").click();
+    // Wait for the reinstalled document to be handed the channel — `#marker`
+    // is identical across a reload, so asserting on it would race.
+    await expect(viewFrame(page).locator("#conn")).toHaveText("connected");
     // The host reinstalls the view and seeds the fresh frame with the live
     // query, so "alpha" comes back on its own (CodeRabbit: assert the reseed
     // rather than an empty state that could pass before the port connects).

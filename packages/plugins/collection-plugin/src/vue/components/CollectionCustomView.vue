@@ -35,6 +35,7 @@ import { useCollectionI18n } from "../lang";
 import { errorMessage } from "@mulmoclaude/core/collection";
 import type { CollectionCustomView } from "@mulmoclaude/core/collection";
 import { useCollectionUi } from "../scopedUi";
+import { decideSearchChannelClaim } from "../searchChannelPolicy";
 
 const { t } = useCollectionI18n();
 
@@ -66,11 +67,9 @@ const iframeEl = ref<HTMLIFrameElement | null>(null);
 // its temporal dead zone.
 let searchPort: MessagePort | null = null;
 
-// A view can force the host to rebuild the frame (see `acceptSearchPort`), and
-// a hostile one could do it in a loop — each rebuild mints a token. Past this
-// many rebuilds the relay gives up instead; the view keeps working, only the
-// search channel stops. Reset when the USER changes view or collection.
-const MAX_FRAME_RECLAIMS = 3;
+// Rebuilds already granted since the user last switched view or collection.
+// The rule itself lives in `decideSearchChannelClaim` — pure, so it is covered
+// exhaustively by unit tests rather than by racing an async iframe rebuild.
 let frameReclaims = 0;
 
 function closeSearchPort(): void {
@@ -220,19 +219,12 @@ function postSearchQuery(query: string): void {
   searchPort?.postMessage({ type: "mc-search-query", slug: props.slug, query });
 }
 
-// The bootstrap runs before any of the view's own scripts, so the FIRST claim
-// on a freshly-built frame is always the view the host installed. Take that one.
-//
-// A second claim means the document changed underneath us — the view reloaded
-// itself, or it navigated somewhere and that page is asking for the channel.
-// The host cannot tell those apart, and no secret can help: anything injected
-// into the view can be handed to the next document in a URL fragment. So don't
-// choose — reinstall the view instead. A self-reload comes back working, and a
-// page the view navigated to is replaced by the real view rather than handed
-// the user's keystrokes. Either way nothing is relayed to an unknown document.
+// Why a claim is answered this way — and why no secret would help — is in
+// `searchChannelPolicy.ts` alongside the rule itself.
 function acceptSearchPort(port: MessagePort | undefined): void {
   if (!port) return;
-  if (!searchPort) {
+  const action = decideSearchChannelClaim(searchPort !== null, frameReclaims);
+  if (action === "connect") {
     searchPort = port;
     // Seed a frame built after the user had already typed (a view switch, or
     // the token re-mint). Empty is skipped — it is the frame's own initial
@@ -242,8 +234,10 @@ function acceptSearchPort(port: MessagePort | undefined): void {
     return;
   }
   closeSearchPort();
-  frameReclaims += 1;
-  if (frameReclaims <= MAX_FRAME_RECLAIMS) void load();
+  if (action === "reinstall") {
+    frameReclaims += 1;
+    void load();
+  }
 }
 
 // Clearing the box must reach the view too, so this one relays "" as well.
