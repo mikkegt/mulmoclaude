@@ -16,8 +16,13 @@ const STATES: SearchChannelState[] = ["idle", "connected", "rebuilding", "exhaus
 
 describe("decideSearchChannelClaim", () => {
   it("hands the channel to the first claim on a frame the host just built", () => {
-    // The bootstrap runs before the view's own scripts, so an idle frame's
-    // first claim is the view the host installed — whatever the reclaim count.
+    // The bootstrap is injected at the start of `<head>`, so it runs before any
+    // script in the view's `<head>` or `<body>` — an idle frame's first claim is
+    // normally the view the host installed, whatever the reclaim count. (A
+    // `<script>` placed BEFORE `<head>` would run earlier and could claim first;
+    // it gains nothing — it is the view's own document — but it spends that
+    // view's reinstall budget. Costed in the plan, not fixed: moving the
+    // injection would move the CSP `<meta>` with it.)
     assert.equal(decideSearchChannelClaim("idle", 0), "connect");
     assert.equal(decideSearchChannelClaim("idle", MAX_FRAME_RECLAIMS), "connect");
     assert.equal(decideSearchChannelClaim("idle", 1_000), "connect");

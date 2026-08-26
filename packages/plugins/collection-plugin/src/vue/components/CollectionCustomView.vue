@@ -230,6 +230,21 @@ function postSearchQuery(query: string): void {
 
 // Why a claim is answered this way — and why no secret would help — is in
 // `searchChannelPolicy.ts` alongside the rule itself.
+function connectSearchPort(port: MessagePort): void {
+  searchPort = port;
+  searchState = "connected";
+  // Seed a frame built after the user had already typed (a view switch, or the
+  // token re-mint). Empty is skipped — it is the frame's own initial state, so
+  // pushing it would fire every view's callback for nothing.
+  const query = props.searchQuery ?? "";
+  if (query) postSearchQuery(query);
+}
+
+function reinstallView(): void {
+  frameReclaims += 1;
+  void load(); // sets `rebuilding`, then `idle` once the new frame is installed
+}
+
 function acceptSearchPort(port: MessagePort | undefined): void {
   if (!port) return;
   const action = decideSearchChannelClaim(searchState, frameReclaims);
@@ -238,19 +253,12 @@ function acceptSearchPort(port: MessagePort | undefined): void {
     return;
   }
   if (action === "connect") {
-    searchPort = port;
-    searchState = "connected";
-    // Seed a frame built after the user had already typed (a view switch, or
-    // the token re-mint). Empty is skipped — it is the frame's own initial
-    // state, so pushing it would fire every view's callback for nothing.
-    const query = props.searchQuery ?? "";
-    if (query) postSearchQuery(query);
+    connectSearchPort(port);
     return;
   }
   closeSearchPort();
   if (action === "reinstall") {
-    frameReclaims += 1;
-    void load(); // sets `rebuilding`, then `idle` once the new frame is installed
+    reinstallView();
     return;
   }
   // Terminal: refusing must not read as "disconnected", or the next claim from
