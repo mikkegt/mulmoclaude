@@ -56,7 +56,13 @@ async function findPackageJsons(root) {
 // was red on a tarball that had shipped the file all along.
 export function packEntry(parsed) {
   const candidate = Array.isArray(parsed) ? parsed[0] : isRecord(parsed) ? Object.values(parsed)[0] : null;
-  return isRecord(candidate) && Array.isArray(candidate.files) ? candidate : null;
+  if (!isRecord(candidate) || !Array.isArray(candidate.files)) return null;
+  // Every entry must carry a string `path`. A `files` array of shapes we cannot
+  // read maps to `[undefined, …]`, which compares unequal to every translation
+  // name — so the gate would fail the package for "the tarball omits this file"
+  // when the truth is "npm's output was unreadable", sending the maintainer to
+  // edit a `files` array that was never the problem.
+  return candidate.files.every((file) => isRecord(file) && typeof file.path === "string") ? candidate : null;
 }
 
 function isRecord(value) {
