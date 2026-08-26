@@ -12,7 +12,7 @@ import {
   type SearchChannelState,
 } from "../../../packages/plugins/collection-plugin/src/vue/searchChannelPolicy.js";
 
-const STATES: SearchChannelState[] = ["idle", "connected", "exhausted"];
+const STATES: SearchChannelState[] = ["idle", "connected", "rebuilding", "exhausted"];
 
 describe("decideSearchChannelClaim", () => {
   it("hands the channel to the first claim on a frame the host just built", () => {
@@ -51,6 +51,25 @@ describe("decideSearchChannelClaim", () => {
     });
   });
 
+  it("refuses back-to-back claims while a rebuild is in flight", () => {
+    // Rebuilding is asynchronous — a token mint and two fetches — and the OLD
+    // document sits in the frame for all of it. If that window read as
+    // connectable, the document being replaced could simply ask again and be
+    // handed the search text (#2963 review, codex iteration 7).
+    const asked = [0, 1, MAX_FRAME_RECLAIMS - 1, MAX_FRAME_RECLAIMS, MAX_FRAME_RECLAIMS + 5];
+    asked.forEach((reclaims) => {
+      assert.equal(decideSearchChannelClaim("rebuilding", reclaims), "ignore", `rebuilding must refuse at reclaims=${reclaims}`);
+    });
+  });
+
+  it("never spends a second rebuild on a frame already being rebuilt", () => {
+    // "ignore" rather than "reinstall": a claimant asking in a loop would
+    // otherwise burn the whole budget inside one rebuild window.
+    Array.from({ length: 20 }, (_, reclaims) => decideSearchChannelClaim("rebuilding", reclaims)).forEach((action) => {
+      assert.equal(action, "ignore");
+    });
+  });
+
   it("grants exactly MAX_FRAME_RECLAIMS rebuilds, counting from zero", () => {
     // The off-by-one that would either waste a rebuild or grant one too many.
     const granted = Array.from({ length: MAX_FRAME_RECLAIMS + 3 }, (_, reclaims) => decideSearchChannelClaim("connected", reclaims)).filter(
@@ -84,10 +103,10 @@ describe("decideSearchChannelClaim", () => {
     assert.equal(decideSearchChannelClaim("idle", 0, 0), "connect");
   });
 
-  it("returns one of the three actions for every state and count", () => {
+  it("returns one of the four actions for every state and count", () => {
     STATES.forEach((state) => {
       [0, 1, 3, 99].forEach((reclaims) => {
-        assert.ok(["connect", "reinstall", "giveUp"].includes(decideSearchChannelClaim(state, reclaims)));
+        assert.ok(["connect", "reinstall", "ignore", "giveUp"].includes(decideSearchChannelClaim(state, reclaims)));
       });
     });
   });

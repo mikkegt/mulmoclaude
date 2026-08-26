@@ -114,7 +114,10 @@ let loadSeq = 0;
 async function load(): Promise<void> {
   clearRefresh();
   closeSearchPort(); // the frame this port belonged to is being replaced
-  if (searchState === "connected") searchState = "idle";
+  // Non-connectable until the new srcdoc is actually installed: the awaits
+  // below are network round trips, and the OLD document sits in the frame for
+  // all of them. `exhausted` outranks this and is not cleared here.
+  if (searchState !== "exhausted") searchState = "rebuilding";
   const seq = ++loadSeq;
   const stale = (): boolean => seq !== loadSeq;
   loading.value = true;
@@ -147,6 +150,8 @@ async function load(): Promise<void> {
     if (stale()) return;
     const i18nBoot = i18n.ok ? i18n.data : { locale: "", dict: {} };
     // 4. Render it sandboxed with the token + CSP + dict injected.
+    // The frame is the host's again from here, so its view may claim.
+    if (searchState === "rebuilding") searchState = "idle";
     srcdoc.value = binding.buildViewSrcdoc(resp.html, {
       slug: props.slug,
       token: mint.data.token,
@@ -228,6 +233,10 @@ function postSearchQuery(query: string): void {
 function acceptSearchPort(port: MessagePort | undefined): void {
   if (!port) return;
   const action = decideSearchChannelClaim(searchState, frameReclaims);
+  if (action === "ignore") {
+    port.close(); // a rebuild is already under way; keep our own port untouched
+    return;
+  }
   if (action === "connect") {
     searchPort = port;
     searchState = "connected";
@@ -241,8 +250,7 @@ function acceptSearchPort(port: MessagePort | undefined): void {
   closeSearchPort();
   if (action === "reinstall") {
     frameReclaims += 1;
-    searchState = "idle"; // the frame is being rebuilt; its view may connect
-    void load();
+    void load(); // sets `rebuilding`, then `idle` once the new frame is installed
     return;
   }
   // Terminal: refusing must not read as "disconnected", or the next claim from

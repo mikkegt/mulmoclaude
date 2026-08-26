@@ -22,15 +22,23 @@ export const MAX_FRAME_RECLAIMS = 3;
 
 /** Where the host's end of the search channel stands.
  *
- *  `exhausted` is a terminal state, not merely "disconnected". Collapsing it
- *  into "no port" is what let a claimant through: refusing a claim closes the
- *  host's port, so the very next claim from the same document looked like a
- *  fresh frame and was connected — and seeded with the user's search text. */
+ *  The two non-obvious states are both there because a single "no port held"
+ *  flag kept conflating situations that must be answered differently:
+ *
+ *  - `exhausted` is terminal, not merely disconnected. Refusing a claim closes
+ *    the host's port, so if refusal read as "no port" the very next claim from
+ *    that same document looked like a fresh frame and was handed the channel.
+ *  - `rebuilding` covers the window while `load()` is in flight. Rebuilding is
+ *    asynchronous — a token mint and two fetches — and the OLD document sits in
+ *    the frame for all of it. Treating that as connectable let a claimant ask
+ *    again mid-rebuild and be seeded with the search text. */
 export type SearchChannelState =
-  /** No port held, and willing to accept one — a frame the host just built. */
+  /** A frame the host built and installed, waiting for its view to claim. */
   | "idle"
   /** Holding a port for the document currently in the frame. */
   | "connected"
+  /** A rebuild is in flight; whatever is in the frame is not the host's yet. */
+  | "rebuilding"
   /** Rebuild budget spent. Refuse every claim until the user changes view. */
   | "exhausted";
 
@@ -39,6 +47,8 @@ export type SearchChannelAction =
   | "connect"
   /** Drop the channel and rebuild the frame, replacing whoever is in it. */
   | "reinstall"
+  /** Refuse and change nothing — a rebuild already under way will settle it. */
+  | "ignore"
   /** Refuse, and stay refusing: the frame keeps whatever document is in it. */
   | "giveUp";
 
@@ -48,6 +58,9 @@ export type SearchChannelAction =
  *  last switched view or collection. */
 export function decideSearchChannelClaim(state: SearchChannelState, reclaims: number, max: number = MAX_FRAME_RECLAIMS): SearchChannelAction {
   if (state === "exhausted") return "giveUp";
+  // Never spend a second rebuild on a frame already being rebuilt: a claimant
+  // asking in a loop would otherwise burn the whole budget in one window.
+  if (state === "rebuilding") return "ignore";
   if (state === "idle") return "connect";
   return reclaims < max ? "reinstall" : "giveUp";
 }
