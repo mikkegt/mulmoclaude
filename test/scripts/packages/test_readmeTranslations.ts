@@ -122,18 +122,21 @@ function writeFakeNpm(bin: string, packJson: string): void {
   writeFileSync(path.join(bin, "npm.cmd"), `@echo off\r\necho ${packJson}\r\n`);
 }
 
-/** Run the real checker with that stub on PATH, and return the process exit
- *  code — which is all CI ever looks at. */
-function exitCodeWithFakeNpm(packJson: string): number {
+/** Run the real checker with that stub on PATH. Returns the exit code AND the
+ *  output: the code alone cannot tell "the checker read our fixture and found a
+ *  problem" from "the checker never ran the fixture at all" — both exit 1. That
+ *  is exactly how the Windows fixture looked healthy while `spawn("npm")` was
+ *  failing with ENOENT on every case. */
+function runWithFakeNpm(packJson: string): { code: number; output: string } {
   const bin = mkdtempSync(path.join(tmpdir(), "fake-npm-"));
   try {
     writeFakeNpm(bin, packJson);
     const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
-    execFileSync(process.execPath, [SCRIPT], { env, stdio: "pipe" });
-    return 0;
+    const output = execFileSync(process.execPath, [SCRIPT], { env, encoding: "utf8", stdio: "pipe" });
+    return { code: 0, output };
   } catch (err) {
-    const { status } = err as { status?: number };
-    return typeof status === "number" ? status : -1;
+    const { status, stdout, stderr } = err as { status?: number; stdout?: string; stderr?: string };
+    return { code: typeof status === "number" ? status : -1, output: `${stdout ?? ""}${stderr ?? ""}` };
   } finally {
     rmSync(bin, { recursive: true, force: true });
   }
@@ -141,18 +144,23 @@ function exitCodeWithFakeNpm(packJson: string): number {
 
 const shipped = (...paths: string[]) => JSON.stringify({ "@mulmobridge/slack": { files: paths.map((filePath) => ({ path: filePath })) } });
 
-const CLI_CASES: { label: string; packJson: string; exitCode: number }[] = [
-  { label: "npm's output cannot be read", packJson: "{}", exitCode: 1 },
-  { label: "the tarball genuinely omits a translation", packJson: shipped("README.md"), exitCode: 1 },
-  { label: "the tarball ships the translation", packJson: shipped("README.md", "README.ja.md"), exitCode: 0 },
+const CLI_CASES: { label: string; packJson: string; exitCode: number; says: RegExp }[] = [
+  { label: "npm's output cannot be read", packJson: "{}", exitCode: 1, says: /unrecognised shape/ },
+  { label: "the tarball genuinely omits a translation", packJson: shipped("README.md"), exitCode: 1, says: /MISSING: README\.ja\.md/ },
+  { label: "the tarball ships the translation", packJson: shipped("README.md", "README.ja.md"), exitCode: 0, says: /README\.ja\.md — OK/ },
   // Distinct from the first row: npm answered a shape, but its file entries are
   // unreadable. It must still fail — as unverified, not as a missing file.
-  { label: "the file entries cannot be read", packJson: '{"@mulmobridge/slack":{"files":[{},{}]}}', exitCode: 1 },
+  { label: "the file entries cannot be read", packJson: '{"@mulmobridge/slack":{"files":[{},{}]}}', exitCode: 1, says: /unrecognised shape/ },
 ];
 
 describe("the CLI itself (end to end)", () => {
-  CLI_CASES.forEach(({ label, packJson, exitCode }) => {
-    it(`exits ${exitCode} when ${label}`, () => assert.equal(exitCodeWithFakeNpm(packJson), exitCode));
+  CLI_CASES.forEach(({ label, packJson, exitCode, says }) => {
+    it(`exits ${exitCode} when ${label}`, () => {
+      const { code, output } = runWithFakeNpm(packJson);
+      // The message first: it is what proves the fixture was actually read.
+      assert.match(output, says, `the checker did not report ${label}`);
+      assert.equal(code, exitCode);
+    });
   });
 });
 

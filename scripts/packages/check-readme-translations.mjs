@@ -81,9 +81,14 @@ function parsePackedPaths(stdout, cwd) {
 /** `npm pack --dry-run --json` in `cwd`, as `{ code, stdout, stderr }`.
  *  `--ignore-scripts` keeps `prepack` hooks (which often run `yarn build` and
  *  pollute stdout with yarn's banner) from corrupting the JSON. */
+// Windows ships npm as `npm.cmd`, and `spawn` without a shell does not apply
+// PATHEXT — so a bare "npm" is ENOENT there. Naming the file is precise and
+// keeps the arguments off a command line entirely, unlike `shell: true`.
+const NPM_BIN = process.platform === "win32" ? "npm.cmd" : "npm";
+
 async function runPack(cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(NPM_BIN, ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const stdout = [];
     const stderr = [];
     child.stdout.on("data", (chunk) => stdout.push(chunk));
