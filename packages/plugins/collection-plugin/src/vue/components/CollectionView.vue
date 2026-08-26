@@ -212,7 +212,14 @@
           :view="activeCustomView"
           @start-chat="onCustomViewStartChat"
         />
-        <CollectionCustomView v-else :slug="collection.slug" :view="activeCustomView" @open-item="onCustomViewOpenItem" @start-chat="onCustomViewStartChat" />
+        <CollectionCustomView
+          v-else
+          :slug="collection.slug"
+          :view="activeCustomView"
+          :search-query="searchQuery"
+          @open-item="onCustomViewOpenItem"
+          @start-chat="onCustomViewStartChat"
+        />
       </div>
 
       <div v-else-if="items.length === 0 && editing?.mode !== 'create'" class="flex flex-col items-center justify-center py-20 text-sm text-slate-400 gap-2">
