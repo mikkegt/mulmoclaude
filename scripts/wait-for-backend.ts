@@ -7,7 +7,7 @@
 import net from "node:net";
 import path from "node:path";
 import { describeRejection, resolveServerPort } from "./lib/devServerPort.js";
-import { waitForPort } from "./lib/waitForPort.js";
+import { answeredBeforeBackendCouldBoot, waitForPort } from "./lib/waitForPort.js";
 import { parseEnvFile } from "../server/utils/launch-env.mjs";
 
 const POLL_INTERVAL_MS = 150;
@@ -82,6 +82,17 @@ async function main(): Promise<void> {
   });
 
   if (result.ready) {
+    // "Something is listening" is not "the backend we just started is
+    // listening", and the difference is silent-401 territory — see
+    // `answeredBeforeBackendCouldBoot`.
+    if (answeredBeforeBackendCouldBoot(result)) {
+      log(
+        `:${port} was ALREADY accepting before this backend could boot — you are probably reaching an EARLIER instance. ` +
+          `If that port was busy, the backend just spawned has walked to a different one (see its own "Port ${port} busy" warning) while Vite keeps proxying here, ` +
+          `and the token it wrote will 401 against the instance actually answering. Stop the other instance, or set PORT to run a second one (#2650).`,
+      );
+      return;
+    }
     log(`backend ready on :${port} after ${seconds(result.waitedMs)}`);
     return;
   }

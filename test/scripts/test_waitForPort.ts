@@ -8,7 +8,7 @@
 // exact assertion rather than a timing-sensitive one.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { waitForPort, type WaitForPortOptions } from "../../scripts/lib/waitForPort.js";
+import { answeredBeforeBackendCouldBoot, waitForPort, type WaitForPortOptions } from "../../scripts/lib/waitForPort.js";
 
 const PORT = 3001;
 
@@ -117,5 +117,36 @@ describe("waitForPort", () => {
       }),
     );
     assert.deepEqual(notices, []);
+  });
+});
+
+// Codex, iter-3: probing the port proves something is listening, NOT that it is
+// the backend `yarn dev` just spawned. With an implicit `PORT` and 3001 busy,
+// `server/index.ts` walks the new backend to 3002 while Vite keeps proxying to
+// 3001; both share a workspace, so the new process overwrites `.session-token`
+// and the page is served a token the instance on 3001 never issued — every
+// request 401s (#2650). Reporting that as plain "ready" would have the
+// readiness check endorse the pairing it exists to prevent.
+describe("answeredBeforeBackendCouldBoot", () => {
+  it("flags a port that was already accepting on the first probe", async () => {
+    // The busy-implicit-default-port case: a stale instance holds :3001, so the
+    // very first probe succeeds and no time passes.
+    const result = await waitForPort(options({ probe: () => Promise.resolve(true) }));
+    assert.equal(result.probes, 1);
+    assert.equal(result.waitedMs, 0);
+    assert.equal(answeredBeforeBackendCouldBoot(result), true);
+  });
+
+  it("does NOT flag a backend that came up while we waited", async () => {
+    const result = await waitForPort(options({ probe: probeAfter(1) }));
+    assert.equal(result.probes, 2);
+    assert.equal(answeredBeforeBackendCouldBoot(result), false);
+  });
+
+  it("does NOT flag a timeout — nothing ever answered", async () => {
+    const result = await waitForPort(options({ probe: () => Promise.resolve(false), timeoutMs: 0 }));
+    assert.equal(result.ready, false);
+    assert.equal(result.probes, 1);
+    assert.equal(answeredBeforeBackendCouldBoot(result), false);
   });
 });
