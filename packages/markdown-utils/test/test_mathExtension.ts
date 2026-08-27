@@ -48,6 +48,15 @@ describe("inline `$…$` — strict delimiter rules", () => {
     assert.doesNotMatch(render("bad $ x $ math"), PENDING);
   });
 
+  it("keeps an escaped dollar inside the body instead of closing on it", () => {
+    // `\$` must be consumed as one unit; taking it for the closing
+    // delimiter cuts the body at a trailing backslash, which the
+    // plausibility rules then reject outright.
+    const html = render("価格は $\\text{Cost: \\$5}$ です。");
+    assert.match(html, PENDING);
+    assert.match(html, />\\text\{Cost: \\\$5\}</);
+  });
+
   it("does not span a line break", () => {
     assert.doesNotMatch(render("open $foo\nbar$ close"), PENDING);
   });

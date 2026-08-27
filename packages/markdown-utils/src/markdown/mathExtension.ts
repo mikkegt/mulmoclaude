@@ -161,7 +161,13 @@ const mathBlock: TokenizerAndRendererExtension = {
 
 // `$$…$$` inside a paragraph (display mode) and `$…$` (inline mode).
 const INLINE_DISPLAY = /^\$\$([^\n]+?)\$\$/;
-const INLINE_PLAIN = /^\$([^\n$]+?)\$/;
+// The body alternates an escaped dollar against any other non-`$`
+// character, rather than excluding `$` outright: an escaped dollar has
+// to be consumed as ONE unit, or the first `\$` is taken for the closing
+// delimiter and a legitimate `$\text{Cost: \$5}$` is cut at the
+// backslash — where `isPlausibleInlineMath` then rejects it for ending
+// in one. The escape branch is ordered first so it wins the match.
+const INLINE_PLAIN = /^\$((?:\\\$|[^\n$])+?)\$/;
 
 const mathInline: TokenizerAndRendererExtension = {
   name: "mathInline",

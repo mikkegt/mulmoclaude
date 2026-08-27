@@ -30,6 +30,11 @@ const SOURCE = [
   "$$",
 ].join("\n");
 
+// MathJax's `html` TeX package implements `\href`, so this is real TeX
+// that produces a real `<a href>` — and the SVG is inserted after the
+// markdown-level sanitiser has already run.
+const XSS_SOURCE = "click $\\href{javascript:alert(document.domain)}{here}$ and $\\href{https://example.com}{there}$";
+
 let body: HTMLElement;
 let renderMathNodes: typeof import("@mulmoclaude/markdown-utils/markdown/mathRender").renderMathNodes;
 
@@ -71,6 +76,31 @@ describe("math placeholders through sanitizeMarkdownHtml", () => {
 
   it("leaves prices as prose", () => {
     assert.match(body.textContent ?? "", /牛丼は \$100 と \$200 です。US\$5 too\./);
+  });
+});
+
+describe("renderMathNodes — sanitisation", () => {
+  it("strips a `javascript:` href smuggled in through \\href, and keeps a safe one", async () => {
+    const mathMd = new Marked();
+    mathMd.use(mathExtension);
+    const { sanitizeMarkdownHtml } = await import("@mulmoclaude/core/plugin-vue");
+    const host = document.createElement("div");
+    host.innerHTML = sanitizeMarkdownHtml(mathMd.parse(XSS_SOURCE) as string);
+    document.body.appendChild(host);
+    await renderMathNodes(host);
+
+    assert.doesNotMatch(host.innerHTML, /javascript:/);
+    assert.match(host.innerHTML, /https:\/\/example\.com/);
+    host.remove();
+  });
+
+  it("inlines every glyph so nothing depends on a <use> the sanitiser drops", async () => {
+    // `fontCache: "none"`. DOMPurify removes `<use>` elements outright,
+    // so a `<defs>`-plus-`<use>` formula would survive sanitisation with
+    // its geometry intact and no glyphs drawn.
+    await renderMathNodes(body);
+    assert.equal(body.querySelectorAll("use").length, 0);
+    assert.ok(body.querySelectorAll("path").length > 0);
   });
 });
 
