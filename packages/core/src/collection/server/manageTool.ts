@@ -62,7 +62,7 @@ import { runCollectionQuery } from "./queryRunner";
 import { enrichItems } from "./derive";
 import { validateCollectionRecords, validateRecordObject } from "./validate";
 import { buildWorkspaceOntology } from "./ontology";
-import { isContainedInRoot, resolveDataDir } from "./paths";
+import { isContainedInRoot, isUnderRealRoot, resolveDataDir } from "./paths";
 import { getWorkspaceRoot, stagingSkillDir } from "./host";
 import { writeFileAtomic } from "../../files/atomic.js";
 import { mirrorSkillWrite } from "../../skill-bridge/index.js";
@@ -536,11 +536,18 @@ async function verifyOpenedItemsFile(handle: FileHandle, hostPath: string, root:
     return `manageCollection: \`itemsFile\` '${shown}' is ${opened.size} bytes, over the limit of ${MAX_ITEMS_FILE_BYTES}. Nothing was read; split the rows across several files and call once per file.`;
   }
   let real: string;
+  let rootReal: string;
   let atPath: Stats;
   let link: Stats;
   try {
     link = await lstat(hostPath);
     real = await realpath(hostPath);
+    // The ROOT resolved by the same api as the file. Canonicalising the two
+    // sides differently is not a style question: on Windows `realpath` expands
+    // an 8.3 short name and `realpathSync` does not, so a root from
+    // `os.tmpdir()` compared against an async-resolved file inside it read as
+    // "outside the workspace" and refused every itemsFile (#2972).
+    rootReal = await realpath(root);
     atPath = await stat(real);
   } catch (err) {
     return openItemsFileRefusal(err, shown);
@@ -550,7 +557,7 @@ async function verifyOpenedItemsFile(handle: FileHandle, hostPath: string, root:
   // and a link resolving back INSIDE the workspace passes both the containment
   // and the inode check, so nothing else here would catch it.
   if (link.isSymbolicLink()) return symlinkRefusal(shown);
-  if (!isContainedInRoot(real, root)) return outsideWorkspaceRefusal(shown);
+  if (!isUnderRealRoot(real, rootReal)) return outsideWorkspaceRefusal(shown);
   if (atPath.ino !== opened.ino || atPath.dev !== opened.dev) {
     return `manageCollection: \`itemsFile\` '${shown}' changed while it was being opened. Nothing was read; write the file, then call putItems.`;
   }

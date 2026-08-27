@@ -13,10 +13,11 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { isContainedInRoot, safeRecordId, safeSlugName } from "@mulmoclaude/core/collection/server";
+import { isContainedInRoot, isUnderRealRoot, safeRecordId, safeSlugName } from "@mulmoclaude/core/collection/server";
 
 let rootDir: string;
 let outsideDir: string;
@@ -29,6 +30,34 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(rootDir, { recursive: true, force: true });
   rmSync(outsideDir, { recursive: true, force: true });
+});
+
+// #2972: `manageCollection` resolved the itemsFile with `fs/promises.realpath`
+// and then handed the result to `isContainedInRoot`, which canonicalises the
+// ROOT with `fs.realpathSync`. On Windows those two APIs disagree — the async
+// one expands an 8.3 short name (`C:\Users\RUNNER~1\…`, which is what
+// `os.tmpdir()` hands back on a GitHub runner) and the sync one does not — so
+// every file under the workspace compared as if it were outside it.
+//
+// The rule these tests pin is not "the APIs agree" (they need not) but
+// "whatever resolves the two sides must be the SAME function".
+describe("realpath canonicalisation is api-dependent", () => {
+  it("compares equal only when both sides come from the same resolver", async () => {
+    const file = path.join(rootDir, "rows.json");
+    writeFileSync(file, "[]");
+    const [syncRoot, syncFile, asyncRoot, asyncFile] = [realpathSync(rootDir), realpathSync(file), await realpath(rootDir), await realpath(file)];
+
+    assert.equal(isUnderRealRoot(syncFile, syncRoot), true, `sync/sync: ${syncFile} under ${syncRoot}`);
+    assert.equal(isUnderRealRoot(asyncFile, asyncRoot), true, `async/async: ${asyncFile} under ${asyncRoot}`);
+    // The mixed pairing is the defect. It happens to hold where the two APIs
+    // agree (POSIX), so this documents the requirement rather than asserting a
+    // platform: what must never happen is code that MIXES them.
+    assert.equal(
+      isUnderRealRoot(asyncFile, syncRoot),
+      asyncRoot === syncRoot,
+      `mixing resolvers is only safe while they agree — syncRoot=${syncRoot} asyncRoot=${asyncRoot}`,
+    );
+  });
 });
 
 describe("isContainedInRoot", () => {
