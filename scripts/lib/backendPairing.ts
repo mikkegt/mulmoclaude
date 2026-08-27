@@ -1,5 +1,5 @@
-// Does the token the PAGE will be handed belong to the backend the PROXY will
-// reach? (#2975 iter-3/4)
+// Does the backend the PROXY will reach match the backend this run started?
+// (#2975, raised by Codex on iter-3/4/5)
 //
 // Waiting for the port is not enough, because a port does not identify who is
 // on it. With an implicit `PORT` and 3001 busy, `server/index.ts` walks the NEW
@@ -8,58 +8,55 @@
 // carries a credential the instance answering on 3001 never issued. Every
 // request then 401s, and nothing in the startup says why.
 //
-// The first version of this check guessed ownership from timing ("the port
-// answered on the first probe, so it cannot be the process we just spawned").
-// Codex was right that a probe count cannot establish ownership — process
-// ordering has no guarantee. So nothing here guesses. Instead:
+// Two earlier attempts at this check were wrong in instructive ways:
 //
-//   1. The backend writes its token BEFORE it listens (`server/index.ts`, one
-//      linear async IIFE). So if the port answers and the token has NOT been
-//      rewritten since this run began, the listener is somebody else's.
-//      A genuinely fast backend is not a false positive: its own write already
-//      happened, so the rewrite is observed and the check passes at once.
-//   2. When the token is finally rewritten, ask the instance actually on the
-//      port whether it accepts that token. Its answer is the proof — no
-//      inference about who started first.
+//   1. Inferring ownership from timing ("the port answered on the first probe,
+//      so it cannot be the process we just spawned"). Codex was right that
+//      process ordering carries no guarantee.
+//   2. Asking the listener to validate the session token. That establishes the
+//      pairing, but it hands a live bearer credential to a process we have not
+//      identified — on a shared machine, another user can bind the port first.
 //
-// `MULMOCLAUDE_AUTH_TOKEN` pins one token across instances, and the health
-// answer reports that correctly as paired: the pairing is what matters, not
-// which process is which.
+// Neither is needed, because the backend ALREADY publishes the port it actually
+// bound: `server/index.ts` writes `<workspace>/.server-port` right after
+// `app.listen` precisely because "the requested PORT may have walked forward off
+// a busy default". Comparing that number against the port Vite will proxy to is
+// the invariant itself — no inference about who started first, and no secret
+// leaves this process.
+//
+// `.server-port` is NOT removed on shutdown, so a stale one outlives its writer.
+// That is what `wasRepublished` is for: only a file this run rewrote can speak
+// for this run.
 
-export interface TokenSnapshot {
+export interface FileSnapshot {
   exists: boolean;
   /** Meaningless when `exists` is false. */
   mtimeMs: number;
 }
 
-/**
- * Did the backend this run started write its own session token?
- *
- * mtime rather than content, because `MULMOCLAUDE_AUTH_TOKEN` makes a restart
- * write the SAME bytes — the write still happened, and it is the write that
- * marks our backend as having reached its startup.
- */
-export function tokenWasRewritten(before: TokenSnapshot, after: TokenSnapshot): boolean {
+/** Did the backend this run started publish its port, rather than us reading
+ *  one left behind by an earlier instance? mtime rather than content, because
+ *  a restart that lands on the same port writes the same bytes — the write is
+ *  what marks the file as speaking for this run. */
+export function wasRepublished(before: FileSnapshot, after: FileSnapshot): boolean {
   if (!after.exists) return false;
   if (!before.exists) return true;
   return after.mtimeMs !== before.mtimeMs;
 }
 
-export type Pairing = "paired" | "mismatch" | "unproven";
+export type Pairing = "paired" | "mismatch" | "unknown";
 
 /**
- * What the backend on the proxy target said when handed the token the page
- * will get. `null` means it could not be asked at all (connection died,
- * malformed reply) — which proves nothing either way, so it must not be
- * reported as a mismatch.
+ * Compare the port the backend actually bound against the one Vite will target.
+ *
+ * `unknown` for anything unreadable — an empty file, a partial write, a build
+ * too old to publish the port at all. Refusing to start on "cannot tell" would
+ * be worse than the race this exists for, so only a number that plainly
+ * disagrees counts as a mismatch.
  */
-export function classifyPairing(healthStatus: number | null): Pairing {
-  if (healthStatus === null) return "unproven";
-  if (healthStatus === 200) return "paired";
-  // The bearer guard's own answers. Anything else (500, 404 on an older
-  // build, a redirect) says something is odd but not that the credential
-  // was rejected, and refusing to start on "odd" would be worse than the
-  // race this check exists for.
-  if (healthStatus === 401 || healthStatus === 403) return "mismatch";
-  return "unproven";
+export function classifyBoundPort(raw: string | null, proxyTarget: number): Pairing {
+  if (raw === null) return "unknown";
+  const bound = Number(raw.trim());
+  if (!Number.isInteger(bound) || bound <= 0) return "unknown";
+  return bound === proxyTarget ? "paired" : "mismatch";
 }

@@ -1,16 +1,18 @@
 // Integration cover for `scripts/wait-for-backend.ts` — real sockets, a real
 // child process, the real CLI (#2975).
 //
-// Codex asked for this on iter-4, and it is the right shape for the finding:
-// the busy-implicit-default-port case is about how three moving parts line up
-// (a listener on the proxy target, a token file, and the order the two dev
-// panes start in), which no unit test of a pure rule can pin down.
+// Codex asked for this on iter-4 and sharpened it on iter-5: the
+// busy-implicit-default-port case is about how three moving parts line up (a
+// listener on the proxy target, the `.server-port` the backend publishes, and
+// the order the two dev panes start in), which no unit test of a pure rule can
+// pin down. The ordering case matters most — an earlier design had a fast path
+// that skipped the check whenever those writes interleaved.
 //
 // Every case binds port 0 and reads back the assigned port, so nothing here
 // depends on 3001 being free on the runner.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import http from "node:http";
+import { createServer, type Server } from "node:net";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,29 +22,28 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CLI = path.join(REPO_ROOT, "scripts", "wait-for-backend.ts");
 const CLI_BUDGET_MS = 8000;
+const PUBLISH_DELAY_MS = 400;
 
 interface Fixture {
   port: number;
   workspace: string;
-  tokenPath: string;
+  portFile: string;
   close: () => Promise<void>;
 }
 
-/** A stand-in backend that accepts exactly one bearer token on /api/health. */
-async function startFakeBackend(acceptedToken: string): Promise<Fixture> {
+/** Something holding the proxy target. What it is does not matter — the check
+ *  never talks to it, which is the point: no credential is handed to a process
+ *  this script has not identified. */
+async function occupyPort(): Promise<Fixture> {
   const workspace = mkdtempSync(path.join(tmpdir(), "wait-backend-test-"));
-  const server = http.createServer((req, res) => {
-    const ok = req.headers.authorization === `Bearer ${acceptedToken}`;
-    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(ok ? { status: "OK" } : { error: "unauthorized" }));
-  });
+  const server: Server = createServer(() => {});
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address !== null && typeof address === "object", "expected a bound TCP address");
   return {
     port: address.port,
     workspace,
-    tokenPath: path.join(workspace, ".session-token"),
+    portFile: path.join(workspace, ".server-port"),
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => {
@@ -53,7 +54,7 @@ async function startFakeBackend(acceptedToken: string): Promise<Fixture> {
   };
 }
 
-function runCli(fixture: Fixture, waitMs: number): Promise<{ code: number | null; out: string }> {
+function runCli(fixture: Fixture): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["--import", "tsx", CLI], {
       cwd: REPO_ROOT,
@@ -61,7 +62,7 @@ function runCli(fixture: Fixture, waitMs: number): Promise<{ code: number | null
         ...process.env,
         PORT: String(fixture.port),
         MULMOCLAUDE_WORKSPACE_PATH: fixture.workspace,
-        MULMOCLAUDE_DEV_WAIT_MS: String(waitMs),
+        MULMOCLAUDE_DEV_WAIT_MS: String(CLI_BUDGET_MS),
       },
     });
     let out = "";
@@ -71,65 +72,63 @@ function runCli(fixture: Fixture, waitMs: number): Promise<{ code: number | null
   });
 }
 
-describe("wait-for-backend CLI — which instance is on the port", () => {
-  let stale: Fixture;
+describe("wait-for-backend CLI — which backend holds the proxy target", () => {
+  let fixture: Fixture;
 
   before(async () => {
-    // The stale instance accepts only its OWN token — exactly what an earlier
-    // `yarn dev` leaves behind on the proxy target.
-    stale = await startFakeBackend("stale-instance-token");
+    fixture = await occupyPort();
   });
   after(async () => {
-    await stale.close();
+    await fixture.close();
   });
 
-  it("refuses to start Vite when the listener rejects this run's token", async () => {
-    // The stale backend's own token is on disk when the wait begins...
-    writeFileSync(stale.tokenPath, "stale-instance-token");
-    // ...and then the backend THIS run started writes its own, the way it does
-    // just before binding the port it walked to.
-    const rewrite = setTimeout(() => writeFileSync(stale.tokenPath, "fresh-instance-token"), 400);
+  it("refuses to start Vite when this run's backend bound a different port", async () => {
+    // An earlier instance left its own number behind...
+    writeFileSync(fixture.portFile, `${fixture.port}\n`);
+    // ...and then the backend THIS run started publishes the port it walked to.
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port + 1}\n`), PUBLISH_DELAY_MS);
 
-    const { code, out } = await runCli(stale, CLI_BUDGET_MS);
-    clearTimeout(rewrite);
+    const { code, out } = await runCli(fixture);
+    clearTimeout(publish);
 
     assert.equal(code, 1, `expected a non-zero exit so \`&& vite\` does not run:\n${out}`);
     assert.match(out, /REFUSING to start Vite/);
     assert.match(out, /2650/);
   });
 
-  it("starts Vite when the listener accepts this run's token", async () => {
-    writeFileSync(stale.tokenPath, "stale-instance-token");
-    // A pinned MULMOCLAUDE_AUTH_TOKEN rewrites the same bytes: the write
-    // happened, and the instance on the port still accepts it.
-    const rewrite = setTimeout(() => writeFileSync(stale.tokenPath, "stale-instance-token"), 400);
+  it("starts Vite when this run's backend bound the port Vite targets", async () => {
+    writeFileSync(fixture.portFile, `${fixture.port}\n`);
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port}\n`), PUBLISH_DELAY_MS);
 
-    const { code, out } = await runCli(stale, CLI_BUDGET_MS);
-    clearTimeout(rewrite);
+    const { code, out } = await runCli(fixture);
+    clearTimeout(publish);
 
     assert.equal(code, 0, out);
     assert.doesNotMatch(out, /REFUSING/);
-    assert.match(out, /accepts this run's session token/);
+    assert.match(out, /backend ready on :/);
   });
 
-  it("does not false-alarm when our own backend wrote its token before this process started", async () => {
-    // The ordering Codex raised: the backend is hot and already listening when
-    // the waiter takes its first probe. Its token write precedes its listen, so
-    // the rewrite is already visible and there is no false 'other instance'
-    // alarm — no probe-count guess is involved.
-    rmSync(stale.tokenPath, { force: true });
-    const ours = await startFakeBackend("ours");
-    writeFileSync(ours.tokenPath, "ours");
+  it("checks even when the publish lands before the first probe resolves (iter-5 ordering)", async () => {
+    // The race Codex named: the port is already held AND a port was already
+    // published, so a design that only checked the 'contested' path would sail
+    // straight past. The check is unconditional, so it still fires — but the
+    // file predates this process, so it warns rather than refusing.
+    writeFileSync(fixture.portFile, `${fixture.port + 7}\n`);
 
-    const { code, out } = await runCli(ours, CLI_BUDGET_MS);
-    await ours.close();
+    const { code, out } = await runCli(fixture);
 
-    // The honest outcome: no rewrite is observable (the write happened before
-    // this process could snapshot the file), so the wait says it cannot
-    // attribute the listener rather than inventing a verdict — and crucially
-    // does NOT refuse, which is what a probe-count guess would have done here.
     assert.equal(code, 0, out);
+    assert.match(out, /WARNING: a leftover \.server-port/);
+    assert.doesNotMatch(out, /backend ready on :/);
+  });
+
+  it("says so plainly when nothing published a port at all", async () => {
+    rmSync(fixture.portFile, { force: true });
+
+    const { code, out } = await runCli(fixture);
+
+    assert.equal(code, 0, out);
+    assert.match(out, /could not confirm which backend holds/);
     assert.doesNotMatch(out, /REFUSING/);
-    assert.match(out, /could not attribute the listener/);
   });
 });
