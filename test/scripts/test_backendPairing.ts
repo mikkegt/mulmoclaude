@@ -2,7 +2,7 @@
 // this run started (#2975, raised by Codex on iter-3/4/5).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { classifyBoundPort, wasRepublished } from "../../scripts/lib/backendPairing.js";
+import { classifyBoundPort, decideReadiness, wasRepublished } from "../../scripts/lib/backendPairing.js";
 
 describe("wasRepublished", () => {
   it("a first publish counts — a fresh workspace has no port file", () => {
@@ -35,5 +35,30 @@ describe("classifyBoundPort", () => {
     [null, "", "   ", "not-a-port", "0", "-1", "3001.5"].forEach((raw) => {
       assert.equal(classifyBoundPort(raw, 3001), "unknown", `expected "${String(raw)}" to be unknown`);
     });
+  });
+});
+
+// The whole startup verdict as one rule. Stated in one place because every
+// regression this check went through (iter-5 → iter-8) was a case added to a
+// branch tree without the rule being restated: a readable mismatch refused in
+// one revision and warned about in the next, a match trusted in one and not the
+// other.
+describe("decideReadiness", () => {
+  it("a readable mismatch is refused whether or not it is attributable", () => {
+    assert.equal(decideReadiness("mismatch", true), "refuse");
+    assert.equal(decideReadiness("mismatch", false), "refuse");
+  });
+
+  it("nothing this startup can claim is never reported as ready", () => {
+    assert.equal(decideReadiness("paired", false), "unconfirmed");
+    assert.equal(decideReadiness("unknown", false), "unconfirmed");
+  });
+
+  it("an attributable match is the only path to ready", () => {
+    assert.equal(decideReadiness("paired", true), "ready");
+  });
+
+  it("an attributable but unreadable file is neither ready nor a refusal", () => {
+    assert.equal(decideReadiness("unknown", true), "unreadable");
   });
 });

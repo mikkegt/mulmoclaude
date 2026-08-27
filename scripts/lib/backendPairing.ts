@@ -60,3 +60,24 @@ export function classifyBoundPort(raw: string | null, proxyTarget: number): Pair
   if (!Number.isInteger(bound) || bound <= 0) return "unknown";
   return bound === proxyTarget ? "paired" : "mismatch";
 }
+
+export type Readiness = "refuse" | "ready" | "unconfirmed" | "unreadable";
+
+/**
+ * The whole startup verdict, as one rule over the two facts that decide it.
+ *
+ * Worth stating in one place rather than as a branch tree, because every
+ * regression this check went through was a case added to the tree without the
+ * rule being restated — a readable mismatch refused in one revision and warned
+ * about in the next, a match trusted in one and not the other.
+ *
+ * `attributed` means the value on disk provably belongs to this startup. A
+ * mismatch outranks it: an unattributed disagreement still means our backend is
+ * not on the port Vite targets, because reaching this point requires something
+ * to be holding that port already.
+ */
+export function decideReadiness(pairing: Pairing, attributed: boolean): Readiness {
+  if (pairing === "mismatch") return "refuse";
+  if (!attributed) return "unconfirmed";
+  return pairing === "paired" ? "ready" : "unreadable";
+}
