@@ -128,26 +128,32 @@ async function verifyProxyTarget(proxyTarget: number, portFile: string, before: 
   const raw = readTextOrNull(portFile);
   const pairing: Pairing = classifyBoundPort(raw, proxyTarget);
 
-  if (!republished) {
-    // The file exists but this run did not write it, so it cannot speak for
-    // this run. Its number is still worth reporting when it disagrees — as a
-    // warning, never as grounds to refuse.
-    if (pairing === "mismatch") {
-      log(
-        `WARNING: a leftover .server-port says :${raw?.trim()} while Vite proxies to :${proxyTarget}, and this run published no port of its own. If the UI 401s on every request, another instance is holding :${proxyTarget} (#2650).`,
-      );
-      return;
-    }
-    log(`could not confirm which backend holds :${proxyTarget} — this run published no port within ${seconds(PAIRING_SETTLE_MS)}. Starting Vite anyway.`);
-    return;
-  }
-
+  // A readable disagreement is refused whether or not this run wrote the file.
+  //
+  // Both reviewers arrived at this independently on iter-6, and the reason is
+  // that `wasRepublished` cannot see a publish that PRECEDES the snapshot: the
+  // two dev panes start concurrently with no ordering guarantee, so a slow
+  // client pane can snapshot a `.server-port` this very run already wrote. That
+  // is not a leftover — it is the mismatch — and warning about it started Vite
+  // into the broken session anyway.
+  //
+  // Refusing on an unattributed mismatch cannot misfire on a healthy startup,
+  // because reaching here means something already holds the proxy target: if it
+  // is our own backend, its port write follows `app.listen` by milliseconds and
+  // the poll above sees it (paired); if it is not, our backend must have walked
+  // elsewhere, which is exactly the case being refused.
   if (pairing === "mismatch" && raw !== null) {
     reportMismatch(proxyTarget, raw);
     return;
   }
+  // Agreement needs no attribution: whoever published it, the port Vite targets
+  // is the port a backend bound, and only one process can hold it.
   if (pairing === "paired") {
     log(`backend ready on :${proxyTarget}`);
+    return;
+  }
+  if (!republished) {
+    log(`could not confirm which backend holds :${proxyTarget} — no port was published within ${seconds(PAIRING_SETTLE_MS)}. Starting Vite anyway.`);
     return;
   }
   log(`backend is up but did not publish a readable port — starting Vite against :${proxyTarget}.`);

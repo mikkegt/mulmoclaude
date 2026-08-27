@@ -108,18 +108,33 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.match(out, /backend ready on :/);
   });
 
-  it("checks even when the publish lands before the first probe resolves (iter-5 ordering)", async () => {
-    // The race Codex named: the port is already held AND a port was already
-    // published, so a design that only checked the 'contested' path would sail
-    // straight past. The check is unconditional, so it still fires — but the
-    // file predates this process, so it warns rather than refusing.
+  it("refuses when this run published before the waiter could snapshot (iter-6 ordering)", async () => {
+    // Both reviewers landed on this one independently. The dev panes start
+    // concurrently with no ordering guarantee, so a slow client pane snapshots
+    // a `.server-port` THIS run already wrote. `wasRepublished` cannot see a
+    // publish that precedes the snapshot, and the earlier version merely warned
+    // here — starting Vite into the broken session it had just diagnosed.
     writeFileSync(fixture.portFile, `${fixture.port + 7}\n`);
 
     const { code, out } = await runCli(fixture);
 
-    assert.equal(code, 0, out);
-    assert.match(out, /WARNING: a leftover \.server-port/);
+    assert.equal(code, 1, `a readable disagreement must stop \`&& vite\` even unattributed:\n${out}`);
+    assert.match(out, /REFUSING to start Vite/);
     assert.doesNotMatch(out, /backend ready on :/);
+  });
+
+  it("reports ready on agreement even when the publish predates the snapshot", async () => {
+    // The same ordering, but the published port IS the one Vite targets. Only
+    // one process can hold a port, so agreement needs no attribution — and
+    // waiting out the settle window to say "could not confirm" would stall a
+    // perfectly healthy startup.
+    writeFileSync(fixture.portFile, `${fixture.port}\n`);
+
+    const { code, out } = await runCli(fixture);
+
+    assert.equal(code, 0, out);
+    assert.match(out, /backend ready on :/);
+    assert.doesNotMatch(out, /REFUSING/);
   });
 
   it("says so plainly when nothing published a port at all", async () => {
