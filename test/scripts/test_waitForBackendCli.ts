@@ -156,6 +156,24 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.match(run.out, /REFUSING to start Vite/);
   });
 
+  it("after --reset, a correct port published before the snapshot starts Vite at once (iter-8)", async () => {
+    // The server winning the process-start race. `--reset` guarantees the file
+    // is this startup's, so there is nothing to wait for — an earlier version
+    // spent the whole settle window here and then called it unconfirmed, which
+    // turns a healthy hot start into a ~10s delay.
+    rmSync(fixture.portFile, { force: true });
+    await runCli(fixture, ["--reset"]);
+    writeFileSync(fixture.portFile, `${fixture.port}\n`); // published before the waiter starts
+
+    const startedAt = Date.now();
+    const { code, out } = await runCli(fixture);
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(code, 0, out);
+    assert.match(out, /backend ready on :/);
+    assert.ok(elapsedMs < 5000, `expected no settle-window stall, took ${elapsedMs}ms:\n${out}`);
+  });
+
   it("says so plainly when nothing published a port at all", async () => {
     rmSync(fixture.portFile, { force: true });
 

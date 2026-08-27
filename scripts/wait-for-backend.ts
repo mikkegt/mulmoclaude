@@ -6,6 +6,7 @@
 // `scripts/lib/backendPairing.ts`. This file is the wiring — resolve the port,
 // probe it, establish the pairing, report — and holds no policy of its own.
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 import os from "node:os";
@@ -18,15 +19,17 @@ const POLL_INTERVAL_MS = 150;
 const PROBE_TIMEOUT_MS = 1000;
 const NOTICE_EVERY_MS = 5000;
 const DEFAULT_TIMEOUT_MS = 60_000;
-// How long to keep looking for OUR backend's token write once the port turns
-// out to be held by someone else. Timing cannot establish ownership — that is
-// what the health answer is for — but something temporal has to bound the
-// search, because "our backend has not written yet" and "our backend already
-// wrote, before this process started" are indistinguishable from the file
-// alone. Boot-to-token measured 3.5s here, so this leaves headroom for a cold
-// Windows boot; past it we say we could not attribute the listener rather than
-// stalling the dev server or guessing.
+// How long to keep looking for this startup's own `.server-port` once the proxy
+// target turns out to be held by someone. Boot-to-publish measured ~3.7s here,
+// so this leaves headroom for a cold Windows boot; past it we say we could not
+// confirm rather than stalling the dev server or guessing. Only reachable when
+// `--reset` did not run (a waiter invoked on its own) — under `yarn dev` the
+// marker settles it without waiting.
 const PAIRING_SETTLE_MS = 10_000;
+// A `--reset` marker older than this cannot be describing the startup happening
+// now — generous enough for the slowest cold boot, short enough that a marker
+// orphaned by a crashed run does not mislead tomorrow's.
+const RESET_MARKER_MAX_AGE_MS = 10 * 60 * 1000;
 
 // Long enough for a cold `tsx` boot on a Windows machine with a virus
 // scanner in the path — the case this was written for. Overridable because
@@ -123,8 +126,20 @@ function reportMismatch(proxyTarget: number, boundPort: string): void {
  * token with an older listener whenever the two writes interleave, so the check
  * has to be unconditional rather than reserved for the suspicious case.
  */
-async function verifyProxyTarget(proxyTarget: number, portFile: string, before: FileSnapshot, deadlineAt: number): Promise<void> {
-  const republished = await awaitRepublish(portFile, before, deadlineAt);
+async function verifyProxyTarget(proxyTarget: number, portFile: string, before: FileSnapshot, deadlineAt: number, attributable: boolean): Promise<void> {
+  // `attributable` means `--reset` cleared the file before either pane started,
+  // so whatever is there now was written by this startup — even if it landed
+  // before the snapshot. Without it, a backend that wins the process-start race
+  // and publishes the CORRECT port early would be waited out for the whole
+  // settle window and then reported unconfirmed: a ~10s delay on a healthy
+  // start, which is the opposite of what a readiness check is for (Codex,
+  // iter-8).
+  //
+  // Only when the file is ALREADY there, though: in the ordinary case `--reset`
+  // has just removed it, and the publish is still seconds away — shortcutting
+  // then would read an absent file and call the startup unreadable.
+  const alreadyPublished = attributable && snapshotFile(portFile).exists;
+  const republished = alreadyPublished || (await awaitRepublish(portFile, before, deadlineAt));
   const raw = readTextOrNull(portFile);
   const pairing: Pairing = classifyBoundPort(raw, proxyTarget);
 
@@ -189,9 +204,40 @@ async function verifyProxyTarget(proxyTarget: number, portFile: string, before: 
 function reset(portFile: string): void {
   try {
     fs.rmSync(portFile, { force: true });
+    fs.writeFileSync(resetMarkerPath(portFile), String(Date.now()));
   } catch (err) {
     log(`could not clear ${portFile}: ${String(err)} — the readiness check may report an older run's port.`);
   }
+}
+
+// The reset happens in its own process, before either pane exists, so the fact
+// that it happened has to survive to the waiter somehow. A marker in the temp
+// dir rather than the workspace: this is coordination between two processes of
+// one `yarn dev`, not user data, and it keeps `.server-port`'s own contract (a
+// live server's address, read by the wiki-write hook) untouched. Keyed by the
+// port file so two workspaces cannot borrow each other's.
+function resetMarkerPath(portFile: string): string {
+  const digest = createHash("sha256").update(portFile).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `mulmoclaude-dev-reset-${digest}`);
+}
+
+/**
+ * Read and remove the marker: did THIS startup clear the port file?
+ *
+ * Consumed rather than merely read, so a marker left behind by a `yarn dev`
+ * that died between the reset and the waiter cannot make some later standalone
+ * invocation trust a stale file. The age check is the second half of that —
+ * a marker older than a startup could plausibly take never speaks for now.
+ */
+function consumeResetMarker(portFile: string): boolean {
+  const marker = resetMarkerPath(portFile);
+  const raw = readTextOrNull(marker);
+  fs.rmSync(marker, { force: true });
+  if (raw === null) return false;
+  const stampedAt = Number(raw.trim());
+  if (!Number.isFinite(stampedAt)) return false;
+  const age = Date.now() - stampedAt;
+  return age >= 0 && age <= RESET_MARKER_MAX_AGE_MS;
 }
 
 async function main(): Promise<void> {
@@ -220,6 +266,7 @@ async function main(): Promise<void> {
   const timeoutMs = resolveTimeoutMs(process.env.MULMOCLAUDE_DEV_WAIT_MS);
   const startedAt = Date.now();
   const portFile = resolveServerPortPath(envFileValues ?? {});
+  const attributable = consumeResetMarker(portFile);
   const before = snapshotFile(portFile);
 
   const result = await waitForPort({
@@ -248,7 +295,7 @@ async function main(): Promise<void> {
   // The port answering says something is there; it does not say it is ours.
   // `.server-port` — which the backend writes with the port it ACTUALLY bound,
   // right after listening — is what settles that.
-  await verifyProxyTarget(port, portFile, before, Math.min(startedAt + timeoutMs, Date.now() + PAIRING_SETTLE_MS));
+  await verifyProxyTarget(port, portFile, before, Math.min(startedAt + timeoutMs, Date.now() + PAIRING_SETTLE_MS), attributable);
 }
 
 // Exit 0 on anything unexpected — `yarn dev` chains this with `&& vite`, and a
