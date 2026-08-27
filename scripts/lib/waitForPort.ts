@@ -72,25 +72,3 @@ export async function waitForPort(options: WaitForPortOptions): Promise<WaitForP
     await sleep(Math.min(pollIntervalMs, timeoutMs - elapsedMs));
   }
 }
-
-/**
- * True when the port was ALREADY accepting on the very first probe.
- *
- * `yarn dev` starts this wait and the backend in the same instant, and the
- * backend needs seconds to reach `app.listen` (3.7s on the machine this was
- * written on, most of it module loading). So a listener that answers before
- * the first poll interval has elapsed cannot be the process just spawned —
- * it is an older one, and that distinction is the whole point of the wait.
- *
- * It matters because the port alone does not identify who is on it. When
- * `PORT` is implicit and 3001 is busy, `server/index.ts` deliberately walks
- * the NEW backend forward to 3002 while Vite keeps proxying to 3001 (#2650).
- * Both instances share a workspace, so the new one overwrites
- * `.session-token` — and the page then carries a token the backend actually
- * answering on 3001 has never issued, so every request 401s. Reporting that
- * as "ready" would be the readiness check endorsing the exact pairing it
- * exists to prevent.
- */
-export function answeredBeforeBackendCouldBoot(result: WaitForPortResult): boolean {
-  return result.ready && result.probes === 1;
-}
