@@ -130,6 +130,11 @@ jobs:
     # this catches drift at PR time before it reaches an `npx
     # mulmoclaude` user.
     - run: yarn run check:launcher-sync
+    # #2967: a help file moved to packages/core/assets/ and a manifest was
+    # deleted, and the docs kept linking at the old paths for months — the
+    # link still READS fine, so only a reader who clicks finds out. It took an
+    # outside contributor to notice. Cheap to check, so check it every PR.
+    - run: yarn run check:doc-links
     - run: yarn run build
     # Bundle integrity: `yarn build` regenerates committed esbuild
     # artifacts (`server/workspace/wiki-history/hook/snapshot.mjs`
