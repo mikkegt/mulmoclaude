@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { apiCall, apiGet, apiPost, apiPut, apiDelete, backendReachable, lastBackendError, setAuthToken } from "../../src/utils/api.ts";
+import { apiCall, apiGet, apiPost, apiPut, apiDelete, backendReachable, isProxyUnreachable, lastBackendError, setAuthToken } from "../../src/utils/api.ts";
 
 // fetch mocking. Capture the URL + init passed by the api module, and
 // reply with a pre-scripted response. Each test installs its own mock
@@ -255,5 +255,79 @@ describe("apiCall — backendReachable signal", () => {
     assert.equal(result.ok, false);
     assert.equal(backendReachable.value, true);
     assert.equal(lastBackendError.value, null);
+  });
+});
+
+// #2975 — a proxy that cannot reach the backend answers with a status of its
+// own, so the reply-means-reachable rule above used to read an outage as a
+// healthy server: the offline banner stayed hidden and `res.statusText` — the
+// bare string "Bad Gateway" — became the error the user saw. Vite's dev proxy
+// does exactly this on ECONNREFUSED (verified: 502, `text/plain`, empty body),
+// which is why `yarn dev` before the backend finished booting showed it.
+describe("apiCall — proxy-level outage (#2975)", () => {
+  beforeEach(() => {
+    installMock();
+    backendReachable.value = true;
+    lastBackendError.value = null;
+  });
+  afterEach(restoreMock);
+
+  // The shape Vite hands back: `res.writeHead(502, {...}).end()`.
+  function bodylessGateway(status: number): Response {
+    return new Response("", { status, headers: { "Content-Type": "text/plain" } });
+  }
+
+  [502, 503, 504].forEach((status) => {
+    it(`treats a body-less ${status} as backend-unreachable`, async () => {
+      nextResponse = bodylessGateway(status);
+      const result = await apiCall("/api/anything");
+      assert.equal(result.ok, false);
+      assert.equal(backendReachable.value, false);
+      if (result.ok === false) {
+        // The status survives for callers that branch on it...
+        assert.equal(result.status, status);
+        // ...but "Bad Gateway" does not reach the user.
+        assert.doesNotMatch(result.error, /Bad Gateway/);
+        assert.match(result.error, /not reachable/i);
+      }
+      assert.match(lastBackendError.value ?? "", new RegExp(String(status)));
+    });
+  });
+
+  // The discriminator, and the reason it is the body rather than the status:
+  // `server/api/routes/skills.ts` answers a failed external skill install with
+  // a real 502, and that is the backend talking. Reading it as an outage would
+  // raise the offline banner over a working server.
+  it("leaves a 502 that carries the server's own JSON error alone", async () => {
+    nextResponse = jsonResponse(502, { error: "external install failed: registry timeout" });
+    const result = await apiCall("/api/skills/install");
+    assert.equal(result.ok, false);
+    assert.equal(backendReachable.value, true);
+    assert.equal(lastBackendError.value, null);
+    if (result.ok === false) assert.match(result.error, /external install failed/);
+  });
+
+  it("recovers on the next real reply, as the health poll drives it", async () => {
+    nextResponse = bodylessGateway(502);
+    await apiCall("/api/health");
+    assert.equal(backendReachable.value, false);
+
+    nextResponse = jsonResponse(200, { ok: true });
+    await apiCall("/api/health");
+    assert.equal(backendReachable.value, true);
+    assert.equal(lastBackendError.value, null);
+  });
+});
+
+describe("isProxyUnreachable", () => {
+  it("is true only for gateway statuses with no app-authored body", () => {
+    assert.equal(isProxyUnreachable(502, false), true);
+    assert.equal(isProxyUnreachable(503, false), true);
+    assert.equal(isProxyUnreachable(504, false), true);
+    assert.equal(isProxyUnreachable(502, true), false);
+    // 500 is the server itself failing — it replied, so it is reachable.
+    assert.equal(isProxyUnreachable(500, false), false);
+    assert.equal(isProxyUnreachable(401, false), false);
+    assert.equal(isProxyUnreachable(404, false), false);
   });
 });
