@@ -12,7 +12,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -43,6 +43,19 @@ describe("isContainedInRoot", () => {
     // yet, but its parent (workspace root) is real and contained.
     const sub = path.join(rootDir, "data", "clients", "items");
     assert.equal(isContainedInRoot(sub, rootDir), true);
+  });
+
+  // #2972: `manageCollection`'s `itemsFile` guard refuses a file the test wrote
+  // directly under its own `mkdtempSync` root — but only on Windows, where
+  // `os.tmpdir()` hands back the 8.3 short form (`C:\Users\RUNNER~1\...`).
+  // Every case above contains a DIRECTORY; this one contains a FILE, which is
+  // the shape that guard actually checks. The message names both realpaths so a
+  // failure says which side failed to canonicalise, rather than just "false".
+  it("accepts a FILE written directly under the root", () => {
+    const file = path.join(rootDir, "rows.json");
+    writeFileSync(file, "[]");
+    const detail = `root=${rootDir} rootReal=${realpathSync(rootDir)} file=${file} fileReal=${realpathSync(file)}`;
+    assert.equal(isContainedInRoot(file, rootDir), true, detail);
   });
 
   it("rejects a directory that IS a symlink pointing outside the root", () => {
