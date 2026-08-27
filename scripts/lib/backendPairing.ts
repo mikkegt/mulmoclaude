@@ -1,5 +1,5 @@
 // Does the backend the PROXY will reach match the backend this run started?
-// (#2975, raised by Codex on iter-3/4/5)
+// (Codex, #2975)
 //
 // Waiting for the port is not enough, because a port does not identify who is
 // on it. With an implicit `PORT` and 3001 busy, `server/index.ts` walks the NEW

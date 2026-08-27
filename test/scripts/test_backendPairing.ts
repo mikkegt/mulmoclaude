@@ -1,5 +1,5 @@
 // The rule that decides whether the backend the PROXY will reach is the one
-// this run started (#2975, raised by Codex on iter-3/4/5).
+// this run started (Codex, #2975).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { classifyBoundPort, decideReadiness, wasRepublished } from "../../scripts/lib/backendPairing.js";
@@ -39,7 +39,7 @@ describe("classifyBoundPort", () => {
 });
 
 // The whole startup verdict as one rule. Stated in one place because every
-// regression this check went through (iter-5 → iter-8) was a case added to a
+// regression this check went through was a case added to a
 // branch tree without the rule being restated: a readable mismatch refused in
 // one revision and warned about in the next, a match trusted in one and not the
 // other.

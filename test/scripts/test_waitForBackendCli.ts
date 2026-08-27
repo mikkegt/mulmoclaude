@@ -1,7 +1,7 @@
 // Integration cover for `scripts/wait-for-backend.ts` — real sockets, a real
 // child process, the real CLI (#2975).
 //
-// Codex asked for this on iter-4 and sharpened it on iter-5: the
+// Codex asked for this and then sharpened it: the
 // busy-implicit-default-port case is about how three moving parts line up (a
 // listener on the proxy target, the `.server-port` the backend publishes, and
 // the order the two dev panes start in), which no unit test of a pure rule can
@@ -108,7 +108,7 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.match(out, /backend ready on :/);
   });
 
-  it("refuses when this run published before the waiter could snapshot (iter-6 ordering)", async () => {
+  it("refuses when this run published before the waiter could snapshot (startup ordering)", async () => {
     // Both reviewers landed on this one independently. The dev panes start
     // concurrently with no ordering guarantee, so a slow client pane snapshots
     // a `.server-port` THIS run already wrote. `wasRepublished` cannot see a
@@ -123,7 +123,7 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.doesNotMatch(out, /backend ready on :/);
   });
 
-  it("does not accept a pre-existing MATCHING port as proof (iter-7)", async () => {
+  it("does not accept a pre-existing MATCHING port as proof", async () => {
     // Codex's reciprocal case. An older backend holding the proxy target leaves
     // `.server-port` reading that very port, while this run's backend writes its
     // new session token before it ever reaches `app.listen`. Calling that
@@ -156,7 +156,7 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.match(run.out, /REFUSING to start Vite/);
   });
 
-  it("after --reset, a correct port published before the snapshot starts Vite at once (iter-8)", async () => {
+  it("after --reset, a correct port published before the snapshot starts Vite at once", async () => {
     // The server winning the process-start race. `--reset` guarantees the file
     // is this startup's, so there is nothing to wait for — an earlier version
     // spent the whole settle window here and then called it unconfirmed, which

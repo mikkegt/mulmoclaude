@@ -50,7 +50,7 @@ function resolveTimeoutMs(raw: string | undefined): number {
 // `||`, and `vite.config.ts`'s regex needs `(.+)`, so neither of them can end
 // up with `""` — and `path.join("", ".server-port")` would silently point this
 // check at the current directory instead of the workspace, where it would find
-// nothing and report every startup as unattributable (CodeRabbit, iter-5).
+// nothing and report every startup as unattributable (CodeRabbit, #2975).
 const nonEmpty = (value: string | undefined): value is string => value !== undefined && value.length > 0;
 
 function resolveServerPortPath(envFileValues: Record<string, string>): string {
@@ -128,7 +128,7 @@ function reportMismatch(proxyTarget: number, boundPort: string): void {
  * the snapshot. Without it, a backend that wins the process-start race and
  * publishes the CORRECT port early would be waited out for the whole settle
  * window and then reported unconfirmed — a ~10s delay on a healthy start, which
- * is the opposite of what a readiness check is for (Codex, iter-8).
+ * is the opposite of what a readiness check is for (Codex, #2975).
  *
  * The shortcut applies only when the file is ALREADY there: in the ordinary
  * case `--reset` has just removed it and the publish is still seconds away, so
@@ -201,7 +201,7 @@ function reset(portFile: string): void {
 // world-writable directory is a symlink waiting to happen: anyone with an
 // account on the machine can pre-create `/tmp/<that name>` pointing at a file
 // of yours, and this write would follow it and clobber that file (CodeRabbit,
-// iter-9; /tmp's sticky bit stops deletions, not plants). A directory only you
+// #2975; /tmp's sticky bit stops deletions, not plants). A directory only you
 // can write removes the opening rather than racing it.
 //
 // Not the workspace either: this is coordination between two processes of one

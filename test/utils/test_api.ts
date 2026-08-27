@@ -343,7 +343,7 @@ describe("isProxyUnreachable", () => {
 // The property: `backendReachable` goes false exactly when the status is a
 // gateway status AND the body carries no app-authored `{ error: string }`.
 // Body *emptiness* is deliberately NOT the discriminator (CodeRabbit
-// suggested it on iter-2): a real reverse proxy in front of the app — nginx
+// suggested it): a real reverse proxy in front of the app — nginx
 // and friends — answers an unreachable upstream with an HTML error PAGE, and
 // requiring an empty body would suppress the banner in exactly the case it
 // exists for. What separates the two is authorship, not length.
