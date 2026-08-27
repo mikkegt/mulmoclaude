@@ -9,7 +9,7 @@ import "../../server/workspace/collections/configure.js"; // configure @mulmocla
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -486,6 +486,11 @@ describe("manageCollection — putItems from itemsFile", () => {
     writeFileSync(file, JSON.stringify(rows));
     return file;
   };
+  // #2972: these refused the file as "outside the workspace" on Windows, where
+  // `os.tmpdir()` yields the 8.3 short form. A bare `assert.match` reports only
+  // the refusal text, which names the path as PASSED and so cannot show which
+  // side of the containment comparison failed to canonicalise. This does.
+  const pathDetail = (file: string): string => `workdir=${workdir} workdirReal=${realpathSync(workdir)} file=${file} fileReal=${realpathSync(file)}`;
 
   it("writes the rows the file holds, with the same per-row results as inline items", async () => {
     const itemsFile = writeItemsFile("rows.json", [record("f1"), { id: "noname", status: "open" }]);
@@ -607,8 +612,9 @@ describe("manageCollection — putItems from itemsFile", () => {
 
   it("refuses an over-cap file WHOLE, leaving nothing written", async () => {
     const rows = Array.from({ length: MAX_PUT_ITEMS + 1 }, (_unused, index) => record(`cap${index}`));
-    const result = await run({ action: "putItems", slug: "portfolio", itemsFile: writeItemsFile("toomany.json", rows) });
-    assert.match(result, new RegExp(`over the putItems limit of ${MAX_PUT_ITEMS}`));
+    const itemsFile = writeItemsFile("toomany.json", rows);
+    const result = await run({ action: "putItems", slug: "portfolio", itemsFile });
+    assert.match(result, new RegExp(`over the putItems limit of ${MAX_PUT_ITEMS}`), pathDetail(itemsFile));
     assert.ok(!existsSync(path.join(workdir, "data/portfolio/items/cap0.json")), "an over-cap call must not write its first rows");
   });
 

@@ -62,7 +62,7 @@ import { runCollectionQuery } from "./queryRunner";
 import { enrichItems } from "./derive";
 import { validateCollectionRecords, validateRecordObject } from "./validate";
 import { buildWorkspaceOntology } from "./ontology";
-import { isContainedInRoot, resolveDataDir } from "./paths";
+import { isContainedInRoot, isUnderRealRoot, resolveDataDir } from "./paths";
 import { getWorkspaceRoot, stagingSkillDir } from "./host";
 import { writeFileAtomic } from "../../files/atomic.js";
 import { mirrorSkillWrite } from "../../skill-bridge/index.js";
@@ -529,32 +529,61 @@ function openItemsFileRefusal(err: unknown, shown: string): string {
  *  descriptor's inode is the one reachable at a contained path. A hardlink
  *  would satisfy it, but the agent cannot create one across the mount boundary
  *  — only the workspace is mounted, and a hardlink cannot cross filesystems. */
-async function verifyOpenedItemsFile(handle: FileHandle, hostPath: string, root: string, shown: string): Promise<{ size: number } | string> {
-  const opened = await handle.stat();
-  if (!opened.isFile()) return `manageCollection: \`itemsFile\` '${shown}' is not a regular file. It must be a JSON file holding an array of record objects.`;
-  if (opened.size > MAX_ITEMS_FILE_BYTES) {
-    return `manageCollection: \`itemsFile\` '${shown}' is ${opened.size} bytes, over the limit of ${MAX_ITEMS_FILE_BYTES}. Nothing was read; split the rows across several files and call once per file.`;
-  }
-  let real: string;
-  let atPath: Stats;
-  let link: Stats;
-  try {
-    link = await lstat(hostPath);
-    real = await realpath(hostPath);
-    atPath = await stat(real);
-  } catch (err) {
-    return openItemsFileRefusal(err, shown);
-  }
+/** What the filesystem says about the path the descriptor was opened from:
+ *  the link itself (is it a symlink?), the resolved target, the root resolved
+ *  BY THE SAME API, and the target's stat.
+ *
+ *  Resolving the two sides with different apis is not a style question: on
+ *  Windows `realpath` expands an 8.3 short name and `realpathSync` does not, so
+ *  a root from `os.tmpdir()` compared against an async-resolved file inside it
+ *  read as "outside the workspace" and refused every itemsFile (#2972). */
+async function resolveOpenedPaths(hostPath: string, root: string): Promise<{ link: Stats; real: string; rootReal: string; atPath: Stats }> {
+  const link = await lstat(hostPath);
+  const real = await realpath(hostPath);
+  const rootReal = await realpath(root);
+  return { link, real, rootReal, atPath: await stat(real) };
+}
+
+/** Judge the opened descriptor against the paths it claims to be. Returns the
+ *  refusal text, or null when the descriptor is the contained file it should
+ *  be. `opened` is the descriptor's own stat, so the identity check compares
+ *  what was OPENED with what is reachable at the path. */
+function openedFileProblem(paths: Awaited<ReturnType<typeof resolveOpenedPaths>>, opened: Stats, shown: string): string | null {
   // The platform-independent half of the symlink refusal: `O_NOFOLLOW` above
   // does not exist on Windows, where the open would follow the link instead —
   // and a link resolving back INSIDE the workspace passes both the containment
   // and the inode check, so nothing else here would catch it.
-  if (link.isSymbolicLink()) return symlinkRefusal(shown);
-  if (!isContainedInRoot(real, root)) return outsideWorkspaceRefusal(shown);
-  if (atPath.ino !== opened.ino || atPath.dev !== opened.dev) {
+  if (paths.link.isSymbolicLink()) return symlinkRefusal(shown);
+  if (!isUnderRealRoot(paths.real, paths.rootReal)) return outsideWorkspaceRefusal(shown);
+  if (paths.atPath.ino !== opened.ino || paths.atPath.dev !== opened.dev) {
     return `manageCollection: \`itemsFile\` '${shown}' changed while it was being opened. Nothing was read; write the file, then call putItems.`;
   }
-  return { size: opened.size };
+  return null;
+}
+
+/** The descriptor's own shape: a regular file, within the byte cap. Returns the
+ *  refusal text, or null. Checked before any path work — a fifo or an 8 MiB
+ *  blob is refused without paying for a realpath. */
+function openedShapeProblem(opened: Stats, shown: string): string | null {
+  if (!opened.isFile()) return `manageCollection: \`itemsFile\` '${shown}' is not a regular file. It must be a JSON file holding an array of record objects.`;
+  if (opened.size > MAX_ITEMS_FILE_BYTES) {
+    return `manageCollection: \`itemsFile\` '${shown}' is ${opened.size} bytes, over the limit of ${MAX_ITEMS_FILE_BYTES}. Nothing was read; split the rows across several files and call once per file.`;
+  }
+  return null;
+}
+
+async function verifyOpenedItemsFile(handle: FileHandle, hostPath: string, root: string, shown: string): Promise<{ size: number } | string> {
+  const opened = await handle.stat();
+  const shapeProblem = openedShapeProblem(opened, shown);
+  if (shapeProblem !== null) return shapeProblem;
+
+  let paths: Awaited<ReturnType<typeof resolveOpenedPaths>>;
+  try {
+    paths = await resolveOpenedPaths(hostPath, root);
+  } catch (err) {
+    return openItemsFileRefusal(err, shown);
+  }
+  return openedFileProblem(paths, opened, shown) ?? { size: opened.size };
 }
 
 /** Open the file ONCE, then prove that descriptor is the contained file.
