@@ -27,6 +27,8 @@ const ko: Messages = {
   marpSplitEditorLabel: "소스",
   mermaidLoadFailed: "⚠ Mermaid 로드 실패: {error}",
   mermaidRenderFailed: "⚠ Mermaid 렌더링 실패: {error}",
+  mathLoadFailed: "⚠ MathJax 로드 실패: {error}",
+  mathRenderFailed: "⚠ 수식 렌더링 실패: {error}",
   bookmarkRailLabel: "북마크",
   bookmarkJump: "북마크로 이동: {label}",
 };

@@ -8,7 +8,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+#### TeX math in the markdown preview
+
+`$…$` and `$$…$$` now typeset in the markdown plugin's document preview, rendered as
+self-contained MathJax **SVG** — no stylesheet and no webfont files enter the published
+tarball, and the formula inherits the surrounding text colour through `currentColor`. Marp
+decks already rendered math (marp-core has it on by default, also via MathJax SVG), so the
+two halves of the same document now agree.
+
+The inline `$` rules are deliberately strict, because `$` is a currency symbol far more often
+than it is a delimiter: no whitespace may hug either delimiter, a digit may not follow the
+closing `$`, an ASCII alphanumeric may not precede the opening one, and the body may not span
+a line break or consist only of digits and separators. So `牛丼は $100 と $200 です。`,
+`US$5`, and `$5-$10` stay prose, while `円周率は$\pi$です。` typesets. `\$` remains a literal
+dollar.
+
+`mathjax-full` loads lazily on the first formula, exactly as `mermaid` does — a document with
+no math pulls in nothing.
+
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@1.4.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 

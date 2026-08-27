@@ -27,6 +27,8 @@ const zh: Messages = {
   marpSplitEditorLabel: "源代码",
   mermaidLoadFailed: "⚠ Mermaid 加载失败: {error}",
   mermaidRenderFailed: "⚠ Mermaid 渲染失败: {error}",
+  mathLoadFailed: "⚠ MathJax 加载失败: {error}",
+  mathRenderFailed: "⚠ 公式渲染失败: {error}",
   bookmarkRailLabel: "书签",
   bookmarkJump: "跳转到书签：{label}",
 };
