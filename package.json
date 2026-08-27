@@ -21,6 +21,7 @@
     "check:launcher-sync": "node scripts/mulmoclaude/launcherSync.mjs",
     "audit:releases": "node scripts/packages/audit-releases.mjs",
     "check:changelog-ships": "node scripts/packages/check-changelog-ships.mjs",
+    "check:doc-links": "node scripts/docs/check-doc-links.mjs",
     "knip": "knip",
     "sleep": "node -e \"setTimeout(()=>{},2000)\"",
     "predev": "yarn plugins:codegen",
