@@ -13,7 +13,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -54,9 +54,9 @@ async function occupyPort(): Promise<Fixture> {
   };
 }
 
-function runCli(fixture: Fixture): Promise<{ code: number | null; out: string }> {
+function runCli(fixture: Fixture, args: string[] = []): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--import", "tsx", CLI], {
+    const child = spawn(process.execPath, ["--import", "tsx", CLI, ...args], {
       cwd: REPO_ROOT,
       env: {
         ...process.env,
@@ -123,18 +123,37 @@ describe("wait-for-backend CLI — which backend holds the proxy target", () => 
     assert.doesNotMatch(out, /backend ready on :/);
   });
 
-  it("reports ready on agreement even when the publish predates the snapshot", async () => {
-    // The same ordering, but the published port IS the one Vite targets. Only
-    // one process can hold a port, so agreement needs no attribution — and
-    // waiting out the settle window to say "could not confirm" would stall a
-    // perfectly healthy startup.
+  it("does not accept a pre-existing MATCHING port as proof (iter-7)", async () => {
+    // Codex's reciprocal case. An older backend holding the proxy target leaves
+    // `.server-port` reading that very port, while this run's backend writes its
+    // new session token before it ever reaches `app.listen`. Calling that
+    // "ready" hands Vite the new token pointed at the old listener — the same
+    // 401, by the opposite route. Nothing this run wrote, so nothing is proven.
     writeFileSync(fixture.portFile, `${fixture.port}\n`);
 
     const { code, out } = await runCli(fixture);
 
     assert.equal(code, 0, out);
-    assert.match(out, /backend ready on :/);
-    assert.doesNotMatch(out, /REFUSING/);
+    assert.match(out, /could not confirm which backend holds/);
+    assert.doesNotMatch(out, /backend ready on :/);
+  });
+
+  it("--reset clears the file, so a later publish is attributable to this startup", async () => {
+    // The rule that ends the ambiguity: `yarn dev` clears `.server-port` before
+    // either pane starts, so anything found afterwards belongs to this run.
+    writeFileSync(fixture.portFile, `${fixture.port}\n`);
+    const { code } = await runCli(fixture, ["--reset"]);
+
+    assert.equal(code, 0);
+    assert.equal(existsSync(fixture.portFile), false, "--reset must remove the stale port file");
+
+    // With the file cleared, the same walked-forward publish is now provable.
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port + 1}\n`), PUBLISH_DELAY_MS);
+    const run = await runCli(fixture);
+    clearTimeout(publish);
+
+    assert.equal(run.code, 1, run.out);
+    assert.match(run.out, /REFUSING to start Vite/);
   });
 
   it("says so plainly when nothing published a port at all", async () => {

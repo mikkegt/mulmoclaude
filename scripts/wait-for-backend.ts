@@ -146,17 +146,52 @@ async function verifyProxyTarget(proxyTarget: number, portFile: string, before: 
     reportMismatch(proxyTarget, raw);
     return;
   }
-  // Agreement needs no attribution: whoever published it, the port Vite targets
-  // is the port a backend bound, and only one process can hold it.
+
+  // A MATCHING value proves nothing on its own (Codex, iter-7): an older
+  // backend holding :3001 leaves `.server-port` reading 3001, and this run's
+  // backend writes its new session token before it ever reaches `app.listen`.
+  // Accepting the match there would hand Vite the new token pointed at the old
+  // listener — the same 401 by the opposite route.
+  //
+  // Under `yarn dev` this branch is unreachable, because `--reset` clears the
+  // file before either pane starts, so any file at all is this run's. It stays
+  // for a waiter invoked on its own, where that guarantee does not hold.
+  if (!republished) {
+    log(`could not confirm which backend holds :${proxyTarget} — this startup published no port within ${seconds(PAIRING_SETTLE_MS)}. Starting Vite anyway.`);
+    return;
+  }
   if (pairing === "paired") {
     log(`backend ready on :${proxyTarget}`);
     return;
   }
-  if (!republished) {
-    log(`could not confirm which backend holds :${proxyTarget} — no port was published within ${seconds(PAIRING_SETTLE_MS)}. Starting Vite anyway.`);
-    return;
-  }
   log(`backend is up but did not publish a readable port — starting Vite against :${proxyTarget}.`);
+}
+
+/**
+ * `--reset`: clear `.server-port` BEFORE either dev pane starts.
+ *
+ * This is what makes the rest of the check decidable, and it is why the loop of
+ * "is this file from our run?" special cases ended here. `.server-port` is not
+ * deleted on shutdown, and the two dev panes start concurrently with no ordering
+ * guarantee — so a file already on disk when the waiter snapshots it might be a
+ * leftover from a dead run OR this run's own publish, and those two demand
+ * opposite verdicts. No amount of mtime reasoning separates them.
+ *
+ * Clearing it first removes the ambiguity at the source: afterwards, a
+ * `.server-port` that exists was written by this startup, full stop.
+ *
+ * Safe to delete: it only ever addresses a live server, so it is meaningless
+ * once that server is gone. An instance still running in this same workspace
+ * would lose its hook's address — but two instances sharing a workspace already
+ * overwrite each other's `.session-token`, which is the very breakage being
+ * detected here. Instances in different workspaces have different files.
+ */
+function reset(portFile: string): void {
+  try {
+    fs.rmSync(portFile, { force: true });
+  } catch (err) {
+    log(`could not clear ${portFile}: ${String(err)} — the readiness check may report an older run's port.`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -165,6 +200,11 @@ async function main(): Promise<void> {
   // wait would watch one port while the proxy addressed another.
   const envFileValues = parseEnvFile(path.join(process.cwd(), ".env")).parsed;
   const resolution = resolveServerPort({ processEnv: process.env, envFileValues });
+
+  if (process.argv.includes("--reset")) {
+    reset(resolveServerPortPath(envFileValues ?? {}));
+    return;
+  }
 
   // `PORT=0` leaves the backend on an OS-assigned port that nothing here can
   // name. Vite's own `assertProxyablePort` refuses to start for it with the
