@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 // `yarn dev`'s client half waits here before starting Vite (#2975).
 //
-// Why this exists rather than `yarn sleep`: see `scripts/lib/waitForPort.ts`.
+// Why this exists rather than a fixed sleep: see `scripts/lib/waitForPort.ts`.
 // This file is the wiring — resolve the port, probe it, report — and holds no
 // policy of its own.
 import net from "node:net";

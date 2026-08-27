@@ -286,9 +286,11 @@ describe("apiCall — proxy-level outage (#2975)", () => {
       if (result.ok === false) {
         // The status survives for callers that branch on it...
         assert.equal(result.status, status);
-        // ...but "Bad Gateway" does not reach the user.
+        // ...but "Bad Gateway" does not reach the user, and what replaces
+        // it is a protocol constant rather than untranslated English prose
+        // (the banner supplies the sentence, in the user's own locale).
         assert.doesNotMatch(result.error, /Bad Gateway/);
-        assert.match(result.error, /not reachable/i);
+        assert.equal(result.error, `HTTP ${status}`);
       }
       assert.match(lastBackendError.value ?? "", new RegExp(String(status)));
     });

@@ -68,9 +68,17 @@ function markBackendUnreachable(message: string): void {
 }
 
 /** Small print for the banner, and the error every caller sees instead of
- *  the bare `Bad Gateway` that `res.statusText` used to hand them. */
-function proxyUnreachableMessage(status: number): string {
-  return `Backend not reachable (HTTP ${status})`;
+ *  the bare `Bad Gateway` that `res.statusText` used to hand them.
+ *
+ *  A protocol constant and nothing else, deliberately. The banner renders
+ *  this after its own translated copy ("Can't reach the backend / the
+ *  server may not be running"), so English prose here would be both
+ *  redundant with that sentence and untranslated in the other seven
+ *  locales — the only thing it adds is the status code. The banner's
+ *  other source, a `fetch` rejection, is untranslated too, but that text
+ *  is the browser's; this one would be ours. */
+function proxyUnreachableDetail(status: number): string {
+  return `HTTP ${status}`;
 }
 
 /** A `fetch` rejection that came from caller-driven `AbortController`
@@ -247,9 +255,9 @@ export async function apiCall<T = unknown>(path: string, opts: ApiOptions = {}):
     // A proxy that could not reach the backend is an outage, not a reply,
     // even though it arrives as one (#2975).
     if (isProxyUnreachable(status, fromAppBody)) {
-      const message = proxyUnreachableMessage(status);
-      markBackendUnreachable(message);
-      return { ok: false, error: message, status };
+      const detail = proxyUnreachableDetail(status);
+      markBackendUnreachable(detail);
+      return { ok: false, error: detail, status };
     }
     markBackendReachable();
     return { ok: false, error, status };
