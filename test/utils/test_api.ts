@@ -333,3 +333,57 @@ describe("isProxyUnreachable", () => {
     assert.equal(isProxyUnreachable(404, false), false);
   });
 });
+
+// The classification rule, swept across body shapes rather than asserted on
+// the one shape that motivated it. Harvested from the differential harness
+// that proved the `apiCall` split behaviour-preserving (244 generated cases,
+// 0 mismatches) — the harness itself could not survive, since half of it was
+// the pre-split code, but the generator and the property it established can.
+//
+// The property: `backendReachable` goes false exactly when the status is a
+// gateway status AND the body carries no app-authored `{ error: string }`.
+// Body *emptiness* is deliberately NOT the discriminator (CodeRabbit
+// suggested it on iter-2): a real reverse proxy in front of the app — nginx
+// and friends — answers an unreachable upstream with an HTML error PAGE, and
+// requiring an empty body would suppress the banner in exactly the case it
+// exists for. What separates the two is authorship, not length.
+describe("apiCall — reachability classification across body shapes", () => {
+  const GATEWAY = [502, 503, 504];
+  const NON_GATEWAY = [400, 401, 404, 409, 500, 501, 599];
+
+  // `authored` = the body is the server's own `{ error: string }` envelope.
+  const SHAPES: { name: string; body: string; ctype: string; authored: boolean }[] = [
+    { name: "app JSON error envelope", body: JSON.stringify({ error: "boom" }), ctype: "application/json", authored: true },
+    { name: "empty body (Vite dev proxy)", body: "", ctype: "text/plain", authored: false },
+    { name: "nginx-style HTML error page", body: "<html><title>502 Bad Gateway</title></html>", ctype: "text/html", authored: false },
+    { name: "bare plain text", body: "upstream connect error", ctype: "text/plain", authored: false },
+    { name: "malformed JSON", body: "{not json", ctype: "application/json", authored: false },
+    { name: "JSON without an error key", body: JSON.stringify({ detail: "x" }), ctype: "application/json", authored: false },
+    { name: "JSON whose error is not a string", body: JSON.stringify({ error: 42 }), ctype: "application/json", authored: false },
+  ];
+
+  beforeEach(installMock);
+  afterEach(restoreMock);
+
+  SHAPES.forEach((shape) => {
+    GATEWAY.forEach((status) => {
+      it(`${status} + ${shape.name} → ${shape.authored ? "reachable" : "UNREACHABLE"}`, async () => {
+        backendReachable.value = true;
+        lastBackendError.value = null;
+        nextResponse = new Response(shape.body, { status, headers: { "Content-Type": shape.ctype } });
+        await apiCall("/api/anything");
+        assert.equal(backendReachable.value, shape.authored);
+      });
+    });
+
+    NON_GATEWAY.forEach((status) => {
+      it(`${status} + ${shape.name} → reachable (the server answered)`, async () => {
+        backendReachable.value = true;
+        lastBackendError.value = null;
+        nextResponse = new Response(shape.body, { status, headers: { "Content-Type": shape.ctype } });
+        await apiCall("/api/anything");
+        assert.equal(backendReachable.value, true);
+      });
+    });
+  });
+});

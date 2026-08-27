@@ -213,61 +213,57 @@ export function isProxyUnreachable(status: number, fromAppBody: boolean): boolea
  * MulmoClaude `/api/*` endpoints return JSON on success); use
  * `apiFetchRaw` for binary / streaming / non-JSON responses.
  */
-export async function apiCall<T = unknown>(path: string, opts: ApiOptions = {}): Promise<ApiResult<T>> {
-  const method = opts.method ?? "GET";
+/** `fetch`'s init rejects an explicit `undefined` signal, so only set it
+ *  when the caller passed one. */
+function buildInit(opts: ApiOptions): FetchInit {
   const hasBody = opts.body !== undefined;
-  const url = `${path}${buildQueryString(opts.query)}`;
-
-  // `fetch`'s init rejects an explicit `undefined` signal, so only set it
-  // when the caller passed one.
   const init: FetchInit = {
-    method,
+    method: opts.method ?? "GET",
     headers: buildHeaders(opts, hasBody),
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   };
   if (hasBody) {
     init.body = JSON.stringify(opts.body);
   }
+  return init;
+}
 
-  let res: Response;
-  try {
-    res = await fetch(url, init);
-  } catch (err) {
-    const message = errorMessage(err);
-    // `fetch` throws on EITHER a true network failure (server
-    // stopped, DNS, CORS preflight) OR a caller-driven
-    // AbortController cancellation. The second case is a normal flow
-    // (file/plugin refresh races, navigation cancel) — flipping the
-    // global offline flag for those would surface a false banner.
-    // Only the first case warrants the signal.
-    if (!isAbortError(err)) {
-      markBackendUnreachable(message);
-    }
-    return {
-      ok: false,
-      error: message,
-      status: 0,
-    };
+/**
+ * `fetch` itself threw. That happens on EITHER a true network failure
+ * (server stopped, DNS, CORS preflight) OR a caller-driven
+ * AbortController cancellation. The second is a normal flow (file/plugin
+ * refresh races, navigation cancel) — flipping the global offline flag
+ * for those would surface a false banner, so only the first signals.
+ */
+function transportFailure<T>(err: unknown): ApiResult<T> {
+  const message = errorMessage(err);
+  if (!isAbortError(err)) {
+    markBackendUnreachable(message);
   }
+  return { ok: false, error: message, status: 0 };
+}
 
-  if (!res.ok) {
-    const { error, status, fromAppBody } = await extractError(res);
-    // A proxy that could not reach the backend is an outage, not a reply,
-    // even though it arrives as one (#2975).
-    if (isProxyUnreachable(status, fromAppBody)) {
-      const detail = proxyUnreachableDetail(status);
-      markBackendUnreachable(detail);
-      return { ok: false, error: detail, status };
-    }
-    markBackendReachable();
-    return { ok: false, error, status };
+/** A reply the server refused (or a proxy invented on its behalf). */
+async function failureResult<T>(res: Response): Promise<ApiResult<T>> {
+  const { error, status, fromAppBody } = await extractError(res);
+  // A proxy that could not reach the backend is an outage, not a reply,
+  // even though it arrives as one (#2975).
+  if (isProxyUnreachable(status, fromAppBody)) {
+    const detail = proxyUnreachableDetail(status);
+    markBackendUnreachable(detail);
+    return { ok: false, error: detail, status };
   }
-
   markBackendReachable();
+  return { ok: false, error, status };
+}
 
-  // `res.json()` returns `Promise<any>`, which is assignable to T
-  // without a cast.
+/** A 2xx. The reachable flag is re-armed before the body is read, so a
+ *  malformed payload from a live server still counts as reachable. */
+async function successResult<T>(res: Response): Promise<ApiResult<T>> {
+  markBackendReachable();
   try {
+    // `res.json()` returns `Promise<any>`, which is assignable to T
+    // without a cast.
     const data: T = await res.json();
     return { ok: true, data };
   } catch (err) {
@@ -277,6 +273,17 @@ export async function apiCall<T = unknown>(path: string, opts: ApiOptions = {}):
       status: res.status,
     };
   }
+}
+
+export async function apiCall<T = unknown>(path: string, opts: ApiOptions = {}): Promise<ApiResult<T>> {
+  const url = `${path}${buildQueryString(opts.query)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, buildInit(opts));
+  } catch (err) {
+    return transportFailure<T>(err);
+  }
+  return res.ok ? successResult<T>(res) : failureResult<T>(res);
 }
 
 // ── Convenience verbs ───────────────────────────────────────────────
