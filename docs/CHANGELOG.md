@@ -21,14 +21,46 @@ two halves of the same document now agree.
 The inline `$` rules are deliberately strict, because `$` is a currency symbol far more often
 than it is a delimiter: no whitespace may hug either delimiter, a digit may not follow the
 closing `$`, an ASCII alphanumeric may not precede the opening one, and the body may not span
-a line break or consist only of digits and separators. So `牛丼は $100 と $200 です。`,
-`US$5`, and `$5-$10` stay prose, while `円周率は$\pi$です。` typesets. `\$` remains a literal
-dollar.
+a line break or be shaped like money. So `牛丼は $100 と $200 です。`, `US$5`, `$5-$10` and
+`$1,000$` stay prose, while `円周率は$\pi$です。` typesets. `\$` remains a literal dollar.
 
 `mathjax-full` loads lazily on the first formula, exactly as `mermaid` does — a document with
 no math pulls in nothing.
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@1.4.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+"Shaped like money" is read from the SHAPE of the number rather than from which separator
+appeared — digits in threes, or more than one separator — so `$1,000$`, `$1.000,50$` and
+`$1 000,50$` all stay prose while `$1,5$` (a decimal comma, which is how most of Europe writes
+one and a half) typesets. Three digits after a single separator is the whole test, leading zero
+or not — `$0.100$` is how fuel is priced, so it reads as money and `$0.1$` is the measurement. A comma groups thousands in English and marks the decimal in most of
+Europe, and a dot does the opposite, so a rule naming one of them fails half the world's
+authors either way.
+
+2.0.0 rejected every digits-and-separators body instead, and that was too wide: `1秒を
+$10000$ 個のステップに割る` and `答えは $1$` are how a maths article writes a number, and both
+came out with the dollars still sitting in the prose. The shapes that actually appear in
+currency text were already covered by the other rules — `$100 と $200` by the
+no-whitespace-before-the-close rule, `$5-$10` by the no-digit-after-it rule, `US$5` by the
+no-alphanumeric-before-the-open rule.
+
+`renderMathNodes` also takes an optional EXTRA sanitising pass over the formula's SVG, run
+after the mandatory one rather than instead of it. The TeX `html` package puts `\style` and
+`\class` under the author's control the same way `\href` is, and DOMPurify's defaults keep
+both attributes. That is harmless here — the markdown is a file on the user's own disk, and
+CSS box positioning does not apply to SVG child elements — but it breaks the invariant of a
+host that renders stranger-written markdown on a signed-in origin and has banned
+author-controlled `class` / `style` outright. Such a host now passes its own policy instead of
+forking the renderer. It composes rather than replaces — the baseline runs before it, and again
+after it — so a policy that only strips attributes cannot accidentally re-admit
+`\href{javascript:…}`, and one that returns markup of its own cannot inject it. Nothing changes
+by default.
+
+`@mulmoclaude/markdown-utils` shipped this as **2.0.0** rather than 1.5.0: 1.4.0 published a
+`MathSanitizer` type that no longer exists, and the third argument it named meant "instead of
+the baseline" where it now means "as well as". Both consumers here pass two arguments and are
+unaffected, but the rename is a source break for anyone who read the published type. **2.1.0**
+follows with the narrowed inline-`$` rule described above.
+
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.1.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 

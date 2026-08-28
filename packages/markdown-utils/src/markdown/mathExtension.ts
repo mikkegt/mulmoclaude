@@ -32,8 +32,29 @@
 //      and must not be a backslash.
 //   4. The character AFTER the closing `$` must not be an ASCII digit
 //      (`$5-$10`).
-//   5. The body must be non-empty, single-line, and must not consist
-//      only of digits and separators (`$1,000$`).
+//   5. The body must be non-empty, single-line, and must be something a
+//      formula could be ABOUT: a number written the way money is
+//      (`$1,000$`, `$1.000,50$` — a price written twice) or separators
+//      with no digits at all (`$+$`) are not.
+//
+// Rule 5 used to reject EVERY digits-and-separators body, and that was
+// too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are the
+// ordinary way to write a number in a maths article, and both came out
+// as a literal `$10000$` / `$1$` sitting in the prose. The signature of
+// a price is its SHAPE — digits in threes, or more than one separator —
+// and the two shapes that actually
+// appear in currency prose are already dead: `$100 と $200` by rule 3
+// (whitespace before the close) and `$5-$10` by rule 4 (a digit after
+// it). What stays admitted is a body like `$5$`, which a person quoting
+// a price does not write: they write `$5`, and it is the DOUBLED
+// delimiter that makes it maths.
+//
+// The SHAPE is matched rather than a particular separator, because a
+// comma groups thousands in English and marks the decimal in most of
+// Europe, and a dot does the opposite (codex, #2985). `$1,5$` is one and
+// a half and typesets; `$1.000,50$` is a price and does not. `$1,500$`
+// is genuinely ambiguous and is read as the price — the reading rule 5
+// already had, which this narrowing keeps rather than reverses.
 //
 // Rules 2-5 are enforced in the tokenizer, where the whole match is in
 // hand. Rule 1 needs the character BEFORE the match, which a marked
@@ -61,9 +82,47 @@ interface MathToken extends Tokens.Generic {
 
 const ASCII_ALNUM = /[A-Za-z0-9]/;
 const ASCII_DIGIT = /\d/;
-/** Digits, separators and currency-ish punctuation only — `$1,000$`
- *  is a price range, not an equation. */
-const NUMERIC_ONLY = /^[\s\d.,:;%+-]*$/;
+const DIGITS = /^\d+$/;
+/** Every character that separates the digit runs of a written number,
+ *  in any locale: `1,000.50`, `1.000,50`, `1 000,50`. Which one groups
+ *  and which one marks the decimal is exactly what cannot be known, so
+ *  none of them is read as one or the other. */
+const NUMBER_SEPARATORS = /[.,\s]/;
+const THOUSAND = 3;
+
+/** A bare number written the way MONEY is written rather than the way a
+ *  quantity is — `1,000`, `1.000`, `1 000`, `1.000,50`, `12,345,678`.
+ *
+ *  Read from the SHAPE, not from which separator appeared: a comma
+ *  groups thousands in English and marks the decimal in most of Europe,
+ *  and a dot does the opposite, so a rule that names one of them fails
+ *  half the world's authors either way (codex, #2985).
+ *
+ *  Two separators or more is money — a quantity does not need them. One
+ *  separator followed by exactly three digits is ambiguous, `$1,500$` as
+ *  much as `$1.500$`, and is read as money: that is the reading rule 5
+ *  already had, and the one this file is narrowing rather than
+ *  reversing. Everything else — `10000`, `1`, `1,5`, `3.14159` — is a
+ *  number, and a number in a maths article is maths.
+ *
+ *  A leading zero is NOT an exception, though it looks like one: a
+ *  three-decimal sub-unit price is how fuel is priced (`$0.100` a litre),
+ *  so `$0.100$` is as ambiguous as `$1.500$` and is read the same way
+ *  (codex, #2985). Three digits after the separator is the whole test. */
+function isMoneyShaped(body: string): boolean {
+  const runs = body.split(NUMBER_SEPARATORS);
+  // Anything that is not digits-and-separators is not a written number at
+  // all — `x=1` and `\pi` land here and are maths by this rule.
+  if (!runs.every((run) => DIGITS.test(run))) return false;
+  if (runs.length === 1) return false;
+  if (runs.length > 2) return true;
+  const [, tail] = runs;
+  if (tail === undefined) return false;
+  return tail.length === THOUSAND;
+}
+/** The same set with the digits removed: a body of punctuation has
+ *  nothing to typeset. */
+const SEPARATORS_ONLY = /^[\s.,:;%+-]*$/;
 
 /** Index of the first `$` in `src` that could legally open math, or
  *  `undefined` when there is none. Marked uses this to cut the
@@ -93,8 +152,10 @@ export function isPlausibleInlineMath(body: string, after: string): boolean {
   if (body.endsWith("\\")) return false;
   // Rule 4: `$5-$10`.
   if (ASCII_DIGIT.test(after)) return false;
-  // Rule 5.
-  if (NUMERIC_ONLY.test(body)) return false;
+  // Rule 5. The shape of money is what says "price"; a plain number is
+  // just a number, and a number in a maths article is maths.
+  if (isMoneyShaped(body)) return false;
+  if (SEPARATORS_ONLY.test(body)) return false;
   return true;
 }
 
