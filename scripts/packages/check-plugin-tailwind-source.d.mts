@@ -10,6 +10,8 @@ export interface CoreClassFile {
   classes: Set<string>;
   /** Every symbol the file exports by name. */
   exports: string[];
+  /** Whether the file has a default export — a use this rule cannot follow. */
+  hasDefaultExport: boolean;
 }
 
 /** A plugin package's Tailwind entry, as the rule reads it. */
@@ -48,6 +50,13 @@ export function sourceTargetsIn(css: string): string[];
 /** Whether a resolved `@source` target covers `file` — the file itself, or a
  *  directory above it. */
 export function sourceCovers(target: string, file: string): boolean;
+
+/** Whether `source` has a default export. */
+export function hasDefaultExport(source: string): boolean;
+
+/** Class-carrying core files whose use cannot be detected: a default import
+ *  arrives under a name of the plugin's choosing. */
+export function undetectableCoreFiles(coreFiles: CoreClassFile[]): CoreClassFile[];
 
 /** Which core files a plugin renders classes from but never scans. */
 export function findGaps(coreFiles: CoreClassFile[], plugins: PluginCssEntry[]): TailwindSourceGap[];

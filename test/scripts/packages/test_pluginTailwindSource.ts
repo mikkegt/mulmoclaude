@@ -13,8 +13,10 @@ import {
   colorClassesIn,
   exportedNamesIn,
   findGaps,
+  hasDefaultExport,
   sourceCovers,
   sourceTargetsIn,
+  undetectableCoreFiles,
   withoutComments,
 } from "../../../scripts/packages/check-plugin-tailwind-source.mjs";
 
@@ -107,9 +109,31 @@ describe("sourceCovers", () => {
   });
 });
 
+// A default import arrives under a name the plugin picks, so no name match can
+// see the use. The gate refuses the shape rather than passing blind on it
+// (Codex review iter-3). `packages/core/src` has no default export today.
+describe("undetectableCoreFiles", () => {
+  const withDefault = (classes: string[]) => ({ file: "/repo/core/palette.ts", classes: new Set(classes), exports: [], hasDefaultExport: true });
+
+  it("refuses a class-carrying file behind a default export", () => {
+    assert.equal(undetectableCoreFiles([withDefault(["bg-lime-50"])]).length, 1);
+  });
+
+  it("says nothing about a default export that declares no classes", () => {
+    assert.deepEqual(undetectableCoreFiles([withDefault([])]), []);
+  });
+
+  it("reads the shape off the source", () => {
+    assert.equal(hasDefaultExport("export default PALETTE;"), true);
+    assert.equal(hasDefaultExport("export const PALETTE = 1;"), false);
+    // Prose about the shape is not the shape.
+    assert.equal(hasDefaultExport("// never export default from here\n"), false);
+  });
+});
+
 describe("findGaps", () => {
   const coreFile = path.join("/repo", "packages", "core", "src", "enumColors.ts");
-  const palette = { file: coreFile, classes: new Set(["bg-lime-50"]), exports: ["resolveEnumColor"] };
+  const palette = { file: coreFile, classes: new Set(["bg-lime-50"]), exports: ["resolveEnumColor"], hasDefaultExport: false };
   const plugin = (targets: string[], usedExports: string[]) => ({
     name: "collection-plugin",
     cssPath: "/repo/packages/plugins/collection-plugin/src/style.css",
@@ -133,7 +157,7 @@ describe("findGaps", () => {
   });
 
   it("ignores a core file that declares no classes — most of core", () => {
-    const plain = { file: coreFile, classes: new Set<string>(), exports: ["resolveEnumColor"] };
+    const plain = { file: coreFile, classes: new Set<string>(), exports: ["resolveEnumColor"], hasDefaultExport: false };
     assert.deepEqual(findGaps([plain], [plugin([], ["resolveEnumColor"])]), []);
   });
 });

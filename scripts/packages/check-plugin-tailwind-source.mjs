@@ -45,6 +45,10 @@ const EXPORT_LINE_RE = /^export (?:declare )?(?:const|function|class|interface|t
 // Whole-source rather than per-line because prettier wraps a long list.
 const EXPORT_LIST_RE = /export\s*\{([^}]*)\}/g;
 const NAME_RE = /^[A-Za-z_$][\w$]*$/;
+// A default export is the one shape this rule cannot follow: the importer picks
+// the local name, so there is nothing to match against. Refused rather than
+// ignored — see `undetectableCoreFiles`.
+const DEFAULT_EXPORT_RE = /^export default\b/m;
 const SOURCE_RE = /@source\s+"([^"]+)"/g;
 // A CSS comment. Tailwind's parser ignores what is inside one, so a gate that
 // does not would read a commented-out `@source` as live — passing while the
@@ -100,6 +104,19 @@ export function sourceCovers(target, file) {
   return target === file || file.startsWith(target + path.sep);
 }
 
+/** Whether `source` has a default export. */
+export function hasDefaultExport(source) {
+  return DEFAULT_EXPORT_RE.test(source);
+}
+
+/** Class-carrying core files whose use this rule cannot detect at all: a default
+ *  import arrives under whatever local name the plugin chooses, so no name match
+ *  can see it. Reported as a failure so the blind spot is loud — a shared palette
+ *  is expected to use named exports. */
+export function undetectableCoreFiles(coreFiles) {
+  return coreFiles.filter((core) => core.classes.size > 0 && core.hasDefaultExport);
+}
+
 /** Which core files a plugin renders classes from but never scans.
  *
  *  Pure: `coreFiles` are `{ file, classes, exports }` and `plugins` are
@@ -133,7 +150,7 @@ function coreFilesWithClasses() {
   return sourceFilesUnder(CORE_SRC)
     .map((file) => {
       const source = readFileSync(file, "utf-8");
-      return { file, classes: colorClassesIn(source), exports: exportedNamesIn(source) };
+      return { file, classes: colorClassesIn(source), exports: exportedNamesIn(source), hasDefaultExport: hasDefaultExport(source) };
     })
     .filter((entry) => entry.classes.size > 0);
 }
@@ -170,7 +187,16 @@ function main() {
   const coreExports = coreFiles.flatMap((core) => core.exports);
   const plugins = pluginsWithCss(coreExports);
   const gaps = findGaps(coreFiles, plugins);
+  const undetectable = undetectableCoreFiles(coreFiles);
   const rel = (file) => path.relative(REPO_ROOT, file);
+  if (undetectable.length > 0) {
+    console.error(`[plugin-css] FAIL — ${undetectable.length} core file(s) declare Tailwind classes behind a default export:`);
+    for (const core of undetectable) console.error(`  ${rel(core.file)}`);
+    console.error("");
+    console.error("  A default import arrives under whatever name the plugin picks, so this");
+    console.error("  gate cannot tell who renders those classes. Export the palette by name.");
+    return 1;
+  }
   if (gaps.length === 0) {
     console.log(`[plugin-css] OK — ${plugins.length} plugin CSS entries, ${coreFiles.length} core file(s) declaring classes, no gaps.`);
     return 0;
