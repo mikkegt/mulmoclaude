@@ -39,9 +39,17 @@ function typeset(source: string, instance: Marked = mathMd): string[] {
   return found;
 }
 
-/** Shorthand for "this document contains no maths at all". */
-function isProse(source: string): boolean {
-  return typeset(source).length === 0;
+/** 数式にならなかったことに加えて、その本文が**散文として残っている**ことまで
+ *  見る。「プレースホルダが出ていない」だけでは、`$1,000$` をトークナイザが
+ *  丸ごと飲み込んで何も出力しない回帰を通してしまう —— 価格が数式になるのと
+ *  同じくらい悪いのに、テストは緑のままになる（coderabbit, #2993）。
+ *
+ *  `survives` は出力に残るべき文字列。markdown のエスケープを経る形（`\$5`
+ *  → `$5`）があるので、ソースそのままではなく期待する出力を渡す。 */
+function assertProse(source: string, survives: string): void {
+  const html = mathMd.parse(source) as string;
+  assert.doesNotMatch(html, /data-math-pending/, `数式として組まれた: ${source}`);
+  assert.ok(html.includes(survives), `散文が出力から消えた: ${survives} — ${html}`);
 }
 
 describe("the shape of a number decides maths vs money", () => {
@@ -67,7 +75,7 @@ describe("the shape of a number decides maths vs money", () => {
   ];
   MONEY.forEach(([body, why]) => {
     it(`\`$${body}$\` は金額として散文に残す — ${why}`, () => {
-      assert.ok(isProse(`価格は $${body}$ です`), `$${body}$ が数式になった`);
+      assertProse(`価格は $${body}$ です`, `$${body}$`);
     });
   });
 
@@ -108,7 +116,7 @@ describe("組むものが無い本文", () => {
   // 箇条書きに `$...$` と置く、といった書き方が金融記事にはある。
   ["+", "-", "...", ":", "%", " . , ".trim()].forEach((body) => {
     it(`\`$${body}$\` は組むものが無いので散文のまま`, () => {
-      assert.ok(isProse(`区切り $${body}$ です`));
+      assertProse(`区切り $${body}$ です`, `$${body}$`);
       assert.equal(isPlausibleInlineMath(body, ""), false);
     });
   });
@@ -126,14 +134,14 @@ describe("トークナイザ単体の境界 — 拡張経由では届かない�
   it("閉じ `$` がエスケープされていた本文を拒む", () => {
     // 本文が `\` で終わるのは、閉じたと思った `$` が実は `\$` だった形。
     assert.equal(isPlausibleInlineMath("x\\", ""), false);
-    assert.ok(isProse("$x\\$ です"));
+    assertProse("$x\\$ です", "$x$");
   });
 
   it("`$$` ブロックは3スペースまでのインデントを許し、4スペースは許さない", () => {
     // 4スペースはインデントコード。ブロック用の正規表現と `findMathBlockStart`
     // の両方が同じ境界を持っていることを確かめる。
     assert.deepEqual(typeset("   $$\n   x^2\n   $$"), ["D:x^2"]);
-    assert.ok(isProse("    $$\n    x^2\n    $$"), "4スペースはコードブロック");
+    assertProse("    $$\n    x^2\n    $$", "$$");
     assert.equal(findMathBlockStart("   $$\nx"), 3);
     assert.equal(findMathBlockStart("    $$\nx"), undefined);
   });
@@ -141,7 +149,7 @@ describe("トークナイザ単体の境界 — 拡張経由では届かない�
 
 describe("金融記事 — 価格は散文、数式だけ組む", () => {
   it("一文に価格が2つあっても間の日本語を飲み込まない", () => {
-    assert.ok(isProse("コーヒーが $100 でパンが $200 です"));
+    assertProse("コーヒーが $100 でパンが $200 です", "コーヒーが $100 でパンが $200 です");
   });
 
   it("価格と数式が同じ文にあるとき、数式だけを組む", () => {
@@ -151,21 +159,21 @@ describe("金融記事 — 価格は散文、数式だけ組む", () => {
   });
 
   it("通貨接頭辞と価格レンジを散文のまま残す", () => {
-    assert.ok(isProse("US$5 と CAD$10"), "ルール1: 開き `$` の直前が英数字");
-    assert.ok(isProse("$5-$10 の範囲"), "ルール4: 閉じ `$` の直後が数字");
-    assert.ok(isProse("定価は \\$5 です"), "ルール1: エスケープされた `$`");
+    assertProse("US$5 と CAD$10", "US$5 と CAD$10");
+    assertProse("$5-$10 の範囲", "$5-$10 の範囲");
+    assertProse("定価は \\$5 です", "定価は $5 です");
   });
 
   it("ルール1だけが効いている形でも散文のまま", () => {
     // 上の3例はルール3か4でも落ちるため、ルール1を外しても通ってしまう。
     // 本文が単独の識別子で、閉じ `$` の後ろが日本語 —— つまりルール1が
     // 唯一の防御になる形を別に置く。
-    assert.ok(isProse("記号 US$x$ です"), "開き `$` の直前が英数字");
-    assert.ok(isProse("エスケープ \\$x$ です"), "開き `$` がバックスラッシュ直後");
+    assertProse("記号 US$x$ です", "記号 US$x$ です");
+    assertProse("エスケープ \\$x$ です", "エスケープ $x$ です");
   });
 
   it("価格表の各セルを数式にしない", () => {
-    assert.ok(isProse("| 商品 | 価格 |\n|---|---|\n| A | $100 |\n| B | $200 |"));
+    assertProse("| 商品 | 価格 |\n|---|---|\n| A | $100 |\n| B | $200 |", "$100");
   });
 
   it("表のセル内の数式は組む", () => {
@@ -185,24 +193,24 @@ describe("金融記事 — 価格は散文、数式だけ組む", () => {
 });
 
 describe("IT記事 — `$` はシェル変数であってデリミタではない", () => {
-  const SHELL = [
-    ["環境変数 $PATH と $HOME を設定", "閉じ側の直前が空白"],
-    ["引数 $1 と $2 を渡す", "同上 — 位置引数"],
-    ["結果は $(date) です", "閉じる `$` がない"],
-    ["`export PATH=$PATH:/bin`", "インラインコードは触らない"],
+  const SHELL: [string, string, string][] = [
+    ["環境変数 $PATH と $HOME を設定", "環境変数 $PATH と $HOME を設定", "閉じ側の直前が空白"],
+    ["引数 $1 と $2 を渡す", "引数 $1 と $2 を渡す", "同上 — 位置引数"],
+    ["結果は $(date) です", "結果は $(date) です", "閉じる `$` がない"],
+    ["`export PATH=$PATH:/bin`", "<code>export PATH=$PATH:/bin</code>", "インラインコードは触らない"],
   ];
-  SHELL.forEach(([source, why]) => {
+  SHELL.forEach(([source, survives, why]) => {
     it(`散文の \`${source.slice(0, 18)}…\` を数式にしない — ${why}`, () => {
-      assert.ok(isProse(source));
+      assertProse(source, survives);
     });
   });
 
   it("コードは4つの書き方すべてで数式から守られる", () => {
-    assert.ok(isProse("`$x$` はコード"), "インラインコード");
-    assert.ok(isProse("```\n$y$\n```"), "バッククォートのフェンス");
-    assert.ok(isProse("~~~\n$z$\n~~~"), "チルダのフェンス");
-    assert.ok(isProse("    $w$\n"), "4スペースのインデントコード");
-    assert.ok(isProse("```\n$$x$$\n```"), "フェンス内の display 記法");
+    assertProse("`$x$` はコード", "<code>$x$</code>");
+    assertProse("```\n$y$\n```", "$y$");
+    assertProse("~~~\n$z$\n~~~", "$z$");
+    assertProse("    $w$\n", "$w$");
+    assertProse("```\n$$x$$\n```", "$$x$$");
   });
 
   it("コード紹介と数式と図が同居する記事で、それぞれが独立に動く", () => {
@@ -254,7 +262,7 @@ describe("markdown の構造と数式の組み合わせ", () => {
   });
 
   it("強調の中の価格は価格のまま", () => {
-    assert.ok(isProse("**価格は $100 です**"));
+    assertProse("**価格は $100 です**", "価格は $100 です");
   });
 });
 
@@ -287,8 +295,8 @@ describe("display 数式", () => {
   });
 
   it("中身が空なら組まない", () => {
-    assert.ok(isProse("$$\n   \n$$"));
-    assert.ok(isProse("$$ です"));
+    assertProse("$$\n   \n$$", "$$");
+    assertProse("$$ です", "$$ です");
   });
 });
 
@@ -324,17 +332,17 @@ describe("改行コードと空白の変種", () => {
   });
 
   it("インライン数式は行をまたがない", () => {
-    assert.ok(isProse("$a\nb$ です"));
+    assertProse("$a\nb$ です", "$a");
   });
 
   it("全角スペースとタブも数の区切りとして扱う", () => {
     // JS の `\s` は U+3000（全角スペース）もタブも含むので、区切りとして
     // 分解され、3桁の tail を持つ金額の形になる。
-    assert.ok(isProse("$1\u3000000$ です"), "全角スペース区切り");
-    assert.ok(isProse("$1\t000$ です"), "タブ区切り");
+    assertProse("$1\u3000000$ です", "$1\u3000000$ です");
+    assertProse("$1\t000$ です", "$1");
   });
 
   it("デリミタに空白が接していたら数式にしない", () => {
-    assert.ok(isProse("$ x$ と $x $"));
+    assertProse("$ x$ と $x $", "$ x$ と $x $");
   });
 });
