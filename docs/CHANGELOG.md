@@ -35,10 +35,17 @@ both attributes. That is harmless here — the markdown is a file on the user's 
 CSS box positioning does not apply to SVG child elements — but it breaks the invariant of a
 host that renders stranger-written markdown on a signed-in origin and has banned
 author-controlled `class` / `style` outright. Such a host now passes its own policy instead of
-forking the renderer, and because it composes rather than replaces, a policy that only strips
-attributes cannot accidentally re-admit `\href{javascript:…}`. Nothing changes by default.
+forking the renderer. It composes rather than replaces — the baseline runs before it, and again
+after it — so a policy that only strips attributes cannot accidentally re-admit
+`\href{javascript:…}`, and one that returns markup of its own cannot inject it. Nothing changes
+by default.
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@1.5.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+`@mulmoclaude/markdown-utils` goes to **2.0.0** rather than 1.5.0 for this: 1.4.0 published a
+`MathSanitizer` type that no longer exists, and the third argument it named meant "instead of
+the baseline" where it now means "as well as". Both consumers here pass two arguments and are
+unaffected, but the rename is a source break for anyone who read the published type.
+
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.0.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 

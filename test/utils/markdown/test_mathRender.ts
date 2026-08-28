@@ -200,6 +200,18 @@ describe("renderMathNodes — host hardening pass", () => {
     host.remove();
   });
 
+  it("cannot have markup INJECTED by a hardener that adds instead of removing", async () => {
+    // A hardener returns an arbitrary string, so nothing in its type says it only took things
+    // away (coderabbit, #2983). The pass after it is what makes the contract true rather than
+    // documented: this one appends a live handler, and the page never sees it.
+    const host = await styledHost();
+    await renderMathNodes(host, undefined, (markup) => `${markup}<img src=x onerror="alert(1)">`);
+
+    assert.doesNotMatch(host.innerHTML, /onerror/);
+    assert.ok(host.querySelectorAll("svg").length > 0);
+    host.remove();
+  });
+
   it("applies a stricter policy when one is passed, and still draws the formula", async () => {
     const DOMPurify = (await import("dompurify")).default;
     const host = await styledHost();
