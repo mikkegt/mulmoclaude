@@ -88,11 +88,19 @@ describe("publishServerPort", () => {
     const ROUNDS = 60;
     writeFileSync(portPath, formatServerPort(OLD_PORT));
 
+    // `finally`, so a rejected publish cannot leave the reader looping on
+    // `setImmediate` and keep this worker alive after the test has already
+    // failed (CodeRabbit, #2981).
     const watcher = watchFile(portPath);
-    for (let round = 0; round < ROUNDS; round += 1) {
-      await publishServerPort(round % 2 === 0 ? NEW_PORT : OLD_PORT, portPath);
+    let observed: Set<string>;
+    try {
+      for (let round = 0; round < ROUNDS; round += 1) {
+        await publishServerPort(round % 2 === 0 ? NEW_PORT : OLD_PORT, portPath);
+      }
+    } finally {
+      observed = await watcher.stop();
     }
-    assertOnlyWholePorts(await watcher.stop(), [OLD_PORT, NEW_PORT]);
+    assertOnlyWholePorts(observed, [OLD_PORT, NEW_PORT]);
   });
 });
 
