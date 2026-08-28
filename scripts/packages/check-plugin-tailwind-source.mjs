@@ -47,8 +47,12 @@ const EXPORT_LIST_RE = /export\s*\{([^}]*)\}/g;
 const NAME_RE = /^[A-Za-z_$][\w$]*$/;
 // A default export is the one shape this rule cannot follow: the importer picks
 // the local name, so there is nothing to match against. Refused rather than
-// ignored — see `undetectableCoreFiles`.
+// ignored — see `undetectableCoreFiles`. Two spellings reach it (`export default
+// X` and `export { x as default }`), so the check asks ONE question of the parse
+// — "is `default` among the names this module hands out?" — rather than
+// enumerating the ways to write it.
 const DEFAULT_EXPORT_RE = /^export default\b/m;
+const DEFAULT_NAME = "default";
 const SOURCE_RE = /@source\s+"([^"]+)"/g;
 // A CSS comment. Tailwind's parser ignores what is inside one, so a gate that
 // does not would read a commented-out `@source` as live — passing while the
@@ -76,6 +80,12 @@ const exportedAs = (entry) => entry.trim().split(/\s+/).pop() ?? "";
  *  `@source` it may not need — the other direction is the bug this gate exists
  *  for. */
 export function exportedNamesIn(source) {
+  return allExportedNames(source).filter((name) => name !== DEFAULT_NAME);
+}
+
+/** Every name the module hands out, `default` included — the parse both public
+ *  questions are asked of. */
+function allExportedNames(source) {
   const declared = source
     .split("\n")
     .map((line) => EXPORT_LINE_RE.exec(line)?.[1])
@@ -104,9 +114,10 @@ export function sourceCovers(target, file) {
   return target === file || file.startsWith(target + path.sep);
 }
 
-/** Whether `source` has a default export. */
+/** Whether `source` hands anything out under a name the importer chooses —
+ *  `export default X` or `export { x as default }`. */
 export function hasDefaultExport(source) {
-  return DEFAULT_EXPORT_RE.test(source);
+  return DEFAULT_EXPORT_RE.test(source) || allExportedNames(source).includes(DEFAULT_NAME);
 }
 
 /** Class-carrying core files whose use this rule cannot detect at all: a default

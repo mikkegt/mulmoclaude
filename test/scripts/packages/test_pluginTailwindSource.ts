@@ -123,11 +123,18 @@ describe("undetectableCoreFiles", () => {
     assert.deepEqual(undetectableCoreFiles([withDefault([])]), []);
   });
 
-  it("reads the shape off the source", () => {
+  it("reads the shape off the source, in either spelling", () => {
     assert.equal(hasDefaultExport("export default PALETTE;"), true);
+    // `export { x as default }` leaves under a name the importer picks too, so
+    // both spellings answer the same question of the parse (Codex review iter-4).
+    assert.equal(hasDefaultExport("const p = 1;\nexport { p as default };"), true);
     assert.equal(hasDefaultExport("export const PALETTE = 1;"), false);
     // Prose about the shape is not the shape.
     assert.equal(hasDefaultExport("// never export default from here\n"), false);
+  });
+
+  it("does not offer `default` as a name a plugin could be matched against", () => {
+    assert.deepEqual(exportedNamesIn("export { p as default, ENUM_ALERT };"), ["ENUM_ALERT"]);
   });
 });
 
