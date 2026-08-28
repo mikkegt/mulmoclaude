@@ -28,7 +28,15 @@ dollar.
 `mathjax-full` loads lazily on the first formula, exactly as `mermaid` does — a document with
 no math pulls in nothing.
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@1.4.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+`renderMathNodes` also takes an optional sanitiser for the formula's SVG, because the TeX
+`html` package puts `\style` and `\class` under the author's control the same way `\href`
+is, and DOMPurify's defaults keep both attributes. That is harmless here — the markdown is a
+file on the user's own disk, and CSS box positioning does not apply to SVG child elements —
+but it breaks the invariant of a host that renders stranger-written markdown on a signed-in
+origin and has banned author-controlled `class` / `style` outright. Such a host now passes its
+own policy instead of forking the renderer; the default is unchanged.
+
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@1.5.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 

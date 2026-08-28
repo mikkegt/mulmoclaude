@@ -152,3 +152,47 @@ describe("renderMathNodes", () => {
     assert.equal(body.innerHTML, first);
   });
 });
+
+// The TeX `html` package also implements `\style` and `\class`, so both
+// attributes are author-controlled the same way `\href` is. DOMPurify's
+// defaults keep them, which is fine here — MulmoClaude renders a file
+// from the user's own disk, and CSS positioning does not apply to SVG
+// child elements anyway. It is NOT fine for a host that renders
+// stranger-written markdown on a signed-in origin and has banned both
+// attributes at the markdown level; that host passes its own sanitiser.
+const STYLED_SOURCE = "$\\style{position:fixed;inset:0;background:#fff}{x}$ and $\\class{fixed inset-0}{y}$";
+
+describe("renderMathNodes — host sanitiser", () => {
+  const styledHost = async (): Promise<HTMLElement> => {
+    const mathMd = new Marked();
+    mathMd.use(mathExtension);
+    const { sanitizeMarkdownHtml } = await import("@mulmoclaude/core/plugin-vue");
+    const host = document.createElement("div");
+    host.innerHTML = sanitizeMarkdownHtml(mathMd.parse(STYLED_SOURCE) as string);
+    document.body.appendChild(host);
+    return host;
+  };
+
+  it("keeps \\style and \\class by default — which is why the parameter exists", async () => {
+    const host = await styledHost();
+    await renderMathNodes(host);
+    assert.match(host.innerHTML, /position:\s*fixed/);
+    assert.match(host.innerHTML, /class="[^"]*inset-0/);
+    host.remove();
+  });
+
+  it("applies a stricter sanitiser when one is passed, and still draws the formula", async () => {
+    const DOMPurify = (await import("dompurify")).default;
+    const host = await styledHost();
+    await renderMathNodes(host, undefined, (markup) => DOMPurify.sanitize(markup, { FORBID_ATTR: ["class", "style"] }));
+
+    assert.doesNotMatch(host.innerHTML, /position:\s*fixed/);
+    assert.doesNotMatch(host.innerHTML, /inset-0/);
+    // Stripped of the author's attributes, not of the formula: both
+    // placeholders still resolve to a drawn SVG rather than an error box.
+    assert.equal(host.querySelectorAll("svg").length, 2);
+    assert.equal(host.querySelectorAll(".math-error").length, 0);
+    assert.ok(host.querySelectorAll("path").length > 0);
+    host.remove();
+  });
+});
