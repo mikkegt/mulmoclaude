@@ -130,6 +130,7 @@ import { requireSameOrigin } from "./api/csrfGuard.js";
 import { bearerAuth } from "./api/auth/bearerAuth.js";
 import { isViewDataPath } from "./api/auth/viewToken.js";
 import { deleteTokenFile, generateAndWriteToken, getCurrentToken } from "./api/auth/token.js";
+import { boundPortOf, publishServerPort } from "./workspace/serverPort.js";
 import { log } from "./system/logger/index.js";
 import { logBackgroundError } from "./utils/logBackgroundError.js";
 import { isNonEmptyString } from "./utils/types.js";
@@ -869,11 +870,18 @@ async function resolvePort(): Promise<number> {
     log.error("server", `Port ${requested} is in use and no free port found in ${requested}..${requested + MAX_PORT_PROBES - 1}.`);
     process.exit(1);
   }
-  // Warn, not info: the dev client is NOT following. Vite's proxy resolves its
-  // target from `PORT` (or the default) when its config is evaluated, in another
-  // process and before this walk happens — so a second `yarn dev` started without
-  // `PORT` ends up rendering the FIRST instance's data, with nothing failing (#2650).
-  log.warn("server", `Port ${requested} busy → using ${fallback} instead. The dev client still proxies to ${requested}; set PORT to run a second instance.`);
+  // Info, not warn: the dev client FOLLOWS this now (#2981). `yarn dev` waits for
+  // the port published below before starting Vite, and Vite reads it, so the
+  // proxy lands here rather than on the port that was asked for. It stayed a
+  // warning for as long as it did not — a second `yarn dev` without `PORT` used
+  // to render the FIRST instance's data with nothing failing (#2650).
+  //
+  // Still worth saying out loud: two instances sharing a workspace overwrite each
+  // other's `.session-token`, so `PORT` remains the right way to run a second one.
+  log.info(
+    "server",
+    `Port ${requested} busy → using ${fallback} instead. The dev client follows this port; set PORT to run a second instance against its own workspace.`,
+  );
   return fallback;
 }
 
@@ -1436,20 +1444,23 @@ process.on("SIGTERM", () => {
     // wiring it here costs nothing.
     startMacosReminderAdapter();
 
-    // Publish the actually-bound port so the hook script can
-    // address us — the requested PORT may have walked forward
-    // off a busy default. Use writeFile (not writeFileAtomic)
-    // because the file is tiny + ephemeral and the .tmp dance
-    // serves no purpose for a single-process write at boot.
+    // Publish the actually-bound port — the requested PORT may have
+    // walked forward off a busy default, and `PORT=0` never named one
+    // at all. Taken from the listener rather than the request for that
+    // second reason. The hook script addresses us through this, and
+    // `yarn dev` points Vite's proxy at it, so it has concurrent
+    // readers and the write has to be atomic (see `publishServerPort`).
+    // What the listener actually got — `port` is only the request, and under
+    // `PORT=0` it stays 0 while the OS picks the real one.
+    const boundPort = boundPortOf(httpServer.address(), port);
     try {
-      const { writeFile } = await import("node:fs/promises");
-      await writeFile(WORKSPACE_PATHS.serverPort, `${port}\n`, { mode: 0o600 });
+      await publishServerPort(boundPort);
     } catch (err) {
-      log.warn("server", "failed to write .server-port; LLM wiki-write hook will be unable to reach the server", {
+      log.warn("server", "failed to write .server-port; the LLM wiki-write hook and the dev proxy will be unable to reach the server", {
         error: String(err),
       });
     }
-    startRuntimeServices(httpServer, port, earlyPubsub).catch((err: unknown) => {
+    startRuntimeServices(httpServer, boundPort, earlyPubsub).catch((err: unknown) => {
       // Fail fast — a half-initialized runtime is worse than a
       // crashed one. Routes mounted at module load already accept
       // requests, so without this exit the app would respond with a

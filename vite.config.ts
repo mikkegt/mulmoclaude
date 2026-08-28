@@ -6,29 +6,27 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createDevWatchIgnore } from './scripts/lib/devWatchIgnore'
-import { assertProxyablePort, describeRejection, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
+import { resolveDevWorkspacePath } from './scripts/lib/devWorkspace'
+import { assertProxyablePort, describeRejection, resolveProxyTarget, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
 import { parseEnvFile } from './server/utils/launch-env.mjs'
+
+// `.env` as the launcher's parser sees it — the same `dotenv.parse` the server's
+// own loader uses. Read once, here, because BOTH things the dev client takes out
+// of `.env` depend on it: where the workspace is, and which port to proxy to.
+const ENV_FILE_VALUES = parseEnvFile(path.join(process.cwd(), '.env')).parsed
 
 // Token file path mirrors `WORKSPACE_PATHS.sessionToken` in
 // server/workspace-paths.ts. Duplicated here (rather than imported)
 // because Vite config runs outside the TS server tsconfig.
 //
-// Honors MULMOCLAUDE_WORKSPACE_PATH (via process.env or directly
-// parsing .env file) so the dev token plugin reads the same workspace
-// the server is using. Local patch 2026-05-30 to fix the unauthorized
-// error when workspace is relocated.
+// Honors MULMOCLAUDE_WORKSPACE_PATH (via process.env or `.env`) so the dev token
+// plugin reads the same workspace the server is using. The resolution is shared
+// with the readiness wait (`resolveDevWorkspacePath`) rather than written twice:
+// this file used to match the assignment with its own regex, which keeps quotes
+// and inline comments that `dotenv.parse` strips, so a quoted path sent the two
+// halves of the dev client to different directories (#2981).
 function resolveWorkspacePath(): string {
-  const fromProcess = process.env.MULMOCLAUDE_WORKSPACE_PATH
-  if (fromProcess && fromProcess.length > 0) return fromProcess
-  try {
-    const envPath = path.join(process.cwd(), '.env')
-    const content = fs.readFileSync(envPath, 'utf-8')
-    const assigned = content.match(/^MULMOCLAUDE_WORKSPACE_PATH=(.+)$/m)?.[1]
-    if (assigned !== undefined) return assigned.trim()
-  } catch {
-    /* .env not present, fall through to default */
-  }
-  return path.join(os.homedir(), 'mulmoclaude')
+  return resolveDevWorkspacePath({ processEnv: process.env, envFileValues: ENV_FILE_VALUES })
 }
 const TOKEN_FILE_PATH = path.join(resolveWorkspacePath(), '.session-token')
 const TOKEN_PLACEHOLDER = '__MULMOCLAUDE_AUTH_TOKEN__'
@@ -46,12 +44,50 @@ const PORT_RESOLUTION = resolveServerPort({
   // The launcher's parser — i.e. `dotenv.parse`, the same one the server's loader
   // uses. Reading the file by hand here would let the two disagree about inline
   // comments, an `export ` prefix or quoting, which is this bug one level down.
-  envFileValues: parseEnvFile(path.join(process.cwd(), '.env')).parsed
+  envFileValues: ENV_FILE_VALUES
 })
-for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
-  console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`)
+// Reported only when it still matters. `PORT=0` is a problem for config-time
+// resolution and no problem at all once the backend has published the port it
+// got, so warning about it after successfully following would just be noise.
+function reportUnusablePortValues(): void {
+  if (PROXY_TARGET.source === 'published') return
+  for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
+    console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`)
+  }
 }
-const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PORT_RESOLUTION.port)
+
+// What the backend ACTUALLY bound, which is not always what it was asked for:
+// `server/index.ts` walks forward off a busy implicit default and publishes the
+// result here. Reading it is what makes the proxy follow (#2981/#2650) instead
+// of addressing a port nobody is on.
+//
+// Ordering is what makes this safe rather than racy: `yarn dev`'s client pane is
+// `yarn wait:backend && vite`, and that wait does not return until this run's
+// backend has published. So by the time this config is evaluated the file holds
+// this run's port — and `yarn dev` cleared it beforehand, so a leftover from a
+// dead run cannot be mistaken for it.
+//
+// Gated on an env var that ONLY `yarn dev` sets, because that guarantee is
+// `yarn dev`'s and not the file's: `yarn dev:client` and `dev:client:e2e` run
+// Vite with no backend and no `--reset`, so whatever `.server-port` holds there
+// is a leftover, and following it would address a port nothing is on. Those
+// keep targeting what `PORT` implies, exactly as before.
+const FOLLOWS_PUBLISHED_PORT = process.env.MULMOCLAUDE_DEV_FOLLOW_PORT === '1'
+
+function readPublishedPort(): string | null {
+  if (!FOLLOWS_PUBLISHED_PORT) return null
+  try {
+    return fs.readFileSync(path.join(resolveWorkspacePath(), '.server-port'), 'utf-8')
+  } catch {
+    return null
+  }
+}
+const PROXY_TARGET = resolveProxyTarget(readPublishedPort(), PORT_RESOLUTION)
+if (PROXY_TARGET.source === 'published' && PROXY_TARGET.port !== PORT_RESOLUTION.port) {
+  console.info(`[vite] proxying to :${PROXY_TARGET.port} — the port the backend actually bound (PORT resolved to :${PORT_RESOLUTION.port})`)
+}
+reportUnusablePortValues()
+const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET.port)
 
 // `PORT=0` (or a whitespace-only PORT, which coerces to 0) leaves the backend on an
 // OS-assigned port that no proxy target can name, so the dev server must refuse to
@@ -63,7 +99,7 @@ function proxyPortGuardPlugin(): Plugin {
     name: 'mulmoclaude-proxy-port-guard',
     apply: 'serve',
     configResolved() {
-      assertProxyablePort(PORT_RESOLUTION)
+      assertProxyablePort(PORT_RESOLUTION, PROXY_TARGET)
     }
   }
 }
