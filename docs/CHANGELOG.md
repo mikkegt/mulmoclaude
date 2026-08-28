@@ -28,6 +28,14 @@ dollar.
 `mathjax-full` loads lazily on the first formula, exactly as `mermaid` does — a document with
 no math pulls in nothing.
 
+The inline rules reject a digits-only body only when it carries a thousands separator
+(`$1,000$`, a price written twice). They used to reject every digits-and-separators body, which
+was too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are how a maths article writes a
+number, and both came out with the dollars still in the prose. The shapes that actually appear
+in currency text were already covered by the other rules — `$100 と $200` by the
+no-whitespace-before-the-close rule, `$5-$10` by the no-digit-after-it rule, `US$5` by the
+no-alphanumeric-before-the-open rule.
+
 `renderMathNodes` also takes an optional EXTRA sanitising pass over the formula's SVG, run
 after the mandatory one rather than instead of it. The TeX `html` package puts `\style` and
 `\class` under the author's control the same way `\href` is, and DOMPurify's defaults keep
@@ -45,7 +53,7 @@ by default.
 the baseline" where it now means "as well as". Both consumers here pass two arguments and are
 unaffected, but the rename is a source break for anyone who read the published type.
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.0.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.1.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 

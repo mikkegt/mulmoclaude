@@ -32,8 +32,21 @@
 //      and must not be a backslash.
 //   4. The character AFTER the closing `$` must not be an ASCII digit
 //      (`$5-$10`).
-//   5. The body must be non-empty, single-line, and must not consist
-//      only of digits and separators (`$1,000$`).
+//   5. The body must be non-empty, single-line, and must be something a
+//      formula could be ABOUT: a thousands-separated number (`$1,000$`,
+//      a price written twice) or separators with no digits at all
+//      (`$+$`) are not.
+//
+// Rule 5 used to reject EVERY digits-and-separators body, and that was
+// too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are the
+// ordinary way to write a number in a maths article, and both came out
+// as a literal `$10000$` / `$1$` sitting in the prose. The signature of
+// a price is the COMMA — `$1,000$` — and the two shapes that actually
+// appear in currency prose are already dead: `$100 と $200` by rule 3
+// (whitespace before the close) and `$5-$10` by rule 4 (a digit after
+// it). What stays admitted is a body like `$5$`, which a person quoting
+// a price does not write: they write `$5`, and it is the DOUBLED
+// delimiter that makes it maths.
 //
 // Rules 2-5 are enforced in the tokenizer, where the whole match is in
 // hand. Rule 1 needs the character BEFORE the match, which a marked
@@ -61,9 +74,12 @@ interface MathToken extends Tokens.Generic {
 
 const ASCII_ALNUM = /[A-Za-z0-9]/;
 const ASCII_DIGIT = /\d/;
-/** Digits, separators and currency-ish punctuation only — `$1,000$`
- *  is a price range, not an equation. */
-const NUMERIC_ONLY = /^[\s\d.,:;%+-]*$/;
+/** Digits, separators and currency-ish punctuation only. Paired with a
+ *  comma test rather than used alone — see rule 5. */
+const DIGITS_AND_SEPARATORS = /^[\s\d.,:;%+-]*$/;
+/** The same set with the digits removed: a body of punctuation has
+ *  nothing to typeset. */
+const SEPARATORS_ONLY = /^[\s.,:;%+-]*$/;
 
 /** Index of the first `$` in `src` that could legally open math, or
  *  `undefined` when there is none. Marked uses this to cut the
@@ -93,8 +109,10 @@ export function isPlausibleInlineMath(body: string, after: string): boolean {
   if (body.endsWith("\\")) return false;
   // Rule 4: `$5-$10`.
   if (ASCII_DIGIT.test(after)) return false;
-  // Rule 5.
-  if (NUMERIC_ONLY.test(body)) return false;
+  // Rule 5. A thousands separator is what says "price"; a plain number is
+  // just a number, and a number in a maths article is maths.
+  if (body.includes(",") && DIGITS_AND_SEPARATORS.test(body)) return false;
+  if (SEPARATORS_ONLY.test(body)) return false;
   return true;
 }
 

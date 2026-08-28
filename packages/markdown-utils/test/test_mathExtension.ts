@@ -40,8 +40,24 @@ describe("inline `$…$` — strict delimiter rules", () => {
     assert.doesNotMatch(render("Cost: $5-$10 range."), PENDING);
   });
 
-  it("leaves a purely numeric body alone", () => {
+  it("leaves a thousands-separated number alone", () => {
+    // The comma is the signature of a price written twice, and it is the only
+    // digits-and-separators body rule 5 still rejects.
     assert.doesNotMatch(render("total $1,000$ only"), PENDING);
+  });
+
+  it("typesets a plain number, which is what a maths article writes", () => {
+    // Rule 5 used to reject EVERY digits-only body, so `1秒を $10000$ 個に割る`
+    // came out with the dollars still in the prose — reported against
+    // mulmoserver's article page, where the author meant maths and got syntax.
+    assert.match(render("1秒を $10000$ 個のステップに割る"), PENDING);
+    assert.match(render("答えは $1$ です"), PENDING);
+    assert.match(render("$1.5$ 倍になる"), PENDING);
+  });
+
+  it("leaves a body with nothing to typeset alone", () => {
+    assert.doesNotMatch(render("a $+$ b"), PENDING);
+    assert.doesNotMatch(render("a $...$ b"), PENDING);
   });
 
   it("leaves whitespace-hugged delimiters alone", () => {
