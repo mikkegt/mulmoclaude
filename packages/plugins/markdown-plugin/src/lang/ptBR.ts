@@ -27,6 +27,8 @@ const ptBR: Messages = {
   marpSplitEditorLabel: "Código",
   mermaidLoadFailed: "⚠ Falha ao carregar o Mermaid: {error}",
   mermaidRenderFailed: "⚠ Falha ao renderizar o Mermaid: {error}",
+  mathLoadFailed: "⚠ Falha ao carregar o MathJax: {error}",
+  mathRenderFailed: "⚠ Falha ao renderizar a fórmula: {error}",
   bookmarkRailLabel: "Marcadores",
   bookmarkJump: "Ir para o marcador: {label}",
 };
