@@ -45,7 +45,12 @@ function typeset(source: string, instance: Marked = mathMd): string[] {
  *  同じくらい悪いのに、テストは緑のままになる（coderabbit, #2993）。
  *
  *  `survives` は出力に残るべき文字列。markdown のエスケープを経る形（`\$5`
- *  → `$5`）があるので、ソースそのままではなく期待する出力を渡す。 */
+ *  → `$5`）があるので、ソースそのままではなく期待する出力を渡す。
+ *
+ *  **断片ではなく散文の全体を渡すこと。** 一部だけを見ていると、残りを
+ *  飲み込む回帰がプレースホルダを出さないまま通る —— `$a\nb$ です` に
+ *  対して `$a` だけを見ていたのがまさにそれで、改行後を失う回帰を
+ *  素通りさせていた（codex, #2993）。 */
 function assertProse(source: string, survives: string): void {
   const html = mathMd.parse(source) as string;
   assert.doesNotMatch(html, /data-math-pending/, `数式として組まれた: ${source}`);
@@ -141,7 +146,7 @@ describe("トークナイザ単体の境界 — 拡張経由では届かない�
     // 4スペースはインデントコード。ブロック用の正規表現と `findMathBlockStart`
     // の両方が同じ境界を持っていることを確かめる。
     assert.deepEqual(typeset("   $$\n   x^2\n   $$"), ["D:x^2"]);
-    assertProse("    $$\n    x^2\n    $$", "$$");
+    assertProse("    $$\n    x^2\n    $$", "$$\nx^2\n$$");
     assert.equal(findMathBlockStart("   $$\nx"), 3);
     assert.equal(findMathBlockStart("    $$\nx"), undefined);
   });
@@ -173,7 +178,8 @@ describe("金融記事 — 価格は散文、数式だけ組む", () => {
   });
 
   it("価格表の各セルを数式にしない", () => {
-    assertProse("| 商品 | 価格 |\n|---|---|\n| A | $100 |\n| B | $200 |", "$100");
+    assertProse("| 商品 | 価格 |\n|---|---|\n| A | $100 |\n| B | $200 |", "<td>$100</td>");
+    assertProse("| 商品 | 価格 |\n|---|---|\n| A | $100 |\n| B | $200 |", "<td>$200</td>");
   });
 
   it("表のセル内の数式は組む", () => {
@@ -207,10 +213,10 @@ describe("IT記事 — `$` はシェル変数であってデリミタではな�
 
   it("コードは4つの書き方すべてで数式から守られる", () => {
     assertProse("`$x$` はコード", "<code>$x$</code>");
-    assertProse("```\n$y$\n```", "$y$");
-    assertProse("~~~\n$z$\n~~~", "$z$");
-    assertProse("    $w$\n", "$w$");
-    assertProse("```\n$$x$$\n```", "$$x$$");
+    assertProse("```\n$y$\n```", "<code>$y$\n</code>");
+    assertProse("~~~\n$z$\n~~~", "<code>$z$\n</code>");
+    assertProse("    $w$\n", "<code>$w$\n</code>");
+    assertProse("```\n$$x$$\n```", "<code>$$x$$\n</code>");
   });
 
   it("コード紹介と数式と図が同居する記事で、それぞれが独立に動く", () => {
@@ -295,7 +301,7 @@ describe("display 数式", () => {
   });
 
   it("中身が空なら組まない", () => {
-    assertProse("$$\n   \n$$", "$$");
+    assertProse("$$\n   \n$$", "<p>$$</p>");
     assertProse("$$ です", "$$ です");
   });
 });
@@ -332,14 +338,14 @@ describe("改行コードと空白の変種", () => {
   });
 
   it("インライン数式は行をまたがない", () => {
-    assertProse("$a\nb$ です", "$a");
+    assertProse("$a\nb$ です", "$a\nb$ です");
   });
 
   it("全角スペースとタブも数の区切りとして扱う", () => {
     // JS の `\s` は U+3000（全角スペース）もタブも含むので、区切りとして
     // 分解され、3桁の tail を持つ金額の形になる。
     assertProse("$1\u3000000$ です", "$1\u3000000$ です");
-    assertProse("$1\t000$ です", "$1");
+    assertProse("$1\t000$ です", "$1\t000$ です");
   });
 
   it("デリミタに空白が接していたら数式にしない", () => {
