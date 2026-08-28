@@ -40,8 +40,40 @@ describe("inline `$…$` — strict delimiter rules", () => {
     assert.doesNotMatch(render("Cost: $5-$10 range."), PENDING);
   });
 
-  it("leaves a purely numeric body alone", () => {
-    assert.doesNotMatch(render("total $1,000$ only"), PENDING);
+  it("leaves a number shaped like money alone, in any locale's convention", () => {
+    // Read from the SHAPE — digits in threes, or more than one separator —
+    // because a comma groups thousands in English and marks the decimal in most
+    // of Europe, and a dot does the opposite. Naming one of them fails half the
+    // world's authors either way.
+    for (const price of ["$1,000$", "$12,345,678$", "$1,000.50$", "$1.000$", "$1.000,50$", "$1 000,50$"]) {
+      assert.doesNotMatch(render(`total ${price} only`), PENDING, price);
+    }
+  });
+
+  it("typesets a decimal comma, which is how most of Europe writes 1.5", () => {
+    // Rejecting every comma would leave those authors with literal dollars in
+    // their prose — the same failure this rule was narrowed to fix for `$1.5$`.
+    assert.match(render("etwa $1,5$ mal"), PENDING);
+    assert.match(render("about $3.14159$ times"), PENDING);
+    // But NOT `$0.100$`: a three-decimal sub-unit price is how fuel is priced,
+    // so a leading zero is no exception — three digits after the separator is
+    // the whole test, and `$0.1$` is the way to write the measurement.
+    assert.doesNotMatch(render("約 $0.100$ の精度"), PENDING);
+    assert.match(render("約 $0.1$ の精度"), PENDING);
+  });
+
+  it("typesets a plain number, which is what a maths article writes", () => {
+    // Rule 5 used to reject EVERY digits-only body, so `1秒を $10000$ 個に割る`
+    // came out with the dollars still in the prose — reported against
+    // mulmoserver's article page, where the author meant maths and got syntax.
+    assert.match(render("1秒を $10000$ 個のステップに割る"), PENDING);
+    assert.match(render("答えは $1$ です"), PENDING);
+    assert.match(render("$1.5$ 倍になる"), PENDING);
+  });
+
+  it("leaves a body with nothing to typeset alone", () => {
+    assert.doesNotMatch(render("a $+$ b"), PENDING);
+    assert.doesNotMatch(render("a $...$ b"), PENDING);
   });
 
   it("leaves whitespace-hugged delimiters alone", () => {
