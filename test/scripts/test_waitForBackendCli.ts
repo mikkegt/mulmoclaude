@@ -1,12 +1,11 @@
 // Integration cover for `scripts/wait-for-backend.ts` — real sockets, a real
-// child process, the real CLI (#2975).
+// child process, the real CLI (#2981).
 //
-// Codex asked for this and then sharpened it: the
-// busy-implicit-default-port case is about how three moving parts line up (a
-// listener on the proxy target, the `.server-port` the backend publishes, and
-// the order the two dev panes start in), which no unit test of a pure rule can
-// pin down. The ordering case matters most — an earlier design had a fast path
-// that skipped the check whenever those writes interleaved.
+// The wait FOLLOWS the port the backend published rather than the one `PORT`
+// asked for, so what has to be pinned here is the order: learn the port, then
+// wait on it. Watching the `PORT`-derived port first is the bug this replaced —
+// those two agree only when the request could be honoured, and #2650 is the case
+// where it could not.
 //
 // Every case binds port 0 and reads back the assigned port, so nothing here
 // depends on 3001 being free on the runner.
@@ -23,25 +22,25 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const CLI = path.join(REPO_ROOT, "scripts", "wait-for-backend.ts");
 const CLI_BUDGET_MS = 8000;
 const PUBLISH_DELAY_MS = 400;
+/** A port nothing is listening on, used as the `PORT` the run asked for. */
+const UNSERVED_PORT = 3999;
 
 interface Fixture {
-  port: number;
+  /** The port the fake backend actually bound. */
+  boundPort: number;
   workspace: string;
   portFile: string;
   close: () => Promise<void>;
 }
 
-/** Something holding the proxy target. What it is does not matter — the check
- *  never talks to it, which is the point: no credential is handed to a process
- *  this script has not identified. */
-async function occupyPort(): Promise<Fixture> {
+async function startFakeBackend(): Promise<Fixture> {
   const workspace = mkdtempSync(path.join(tmpdir(), "wait-backend-test-"));
   const server: Server = createServer(() => {});
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address !== null && typeof address === "object", "expected a bound TCP address");
   return {
-    port: address.port,
+    boundPort: address.port,
     workspace,
     portFile: path.join(workspace, ".server-port"),
     close: () =>
@@ -54,13 +53,13 @@ async function occupyPort(): Promise<Fixture> {
   };
 }
 
-function runCli(fixture: Fixture, args: string[] = []): Promise<{ code: number | null; out: string }> {
+function runCli(fixture: Fixture, opts: { port: number; args?: string[] } = { port: UNSERVED_PORT }): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--import", "tsx", CLI, ...args], {
+    const child = spawn(process.execPath, ["--import", "tsx", CLI, ...(opts.args ?? [])], {
       cwd: REPO_ROOT,
       env: {
         ...process.env,
-        PORT: String(fixture.port),
+        PORT: String(opts.port),
         MULMOCLAUDE_WORKSPACE_PATH: fixture.workspace,
         MULMOCLAUDE_DEV_WAIT_MS: String(CLI_BUDGET_MS),
       },
@@ -72,115 +71,99 @@ function runCli(fixture: Fixture, args: string[] = []): Promise<{ code: number |
   });
 }
 
-describe("wait-for-backend CLI — which backend holds the proxy target", () => {
+describe("wait-for-backend CLI — follows the port the backend published", () => {
   let fixture: Fixture;
 
   before(async () => {
-    fixture = await occupyPort();
+    fixture = await startFakeBackend();
   });
   after(async () => {
     await fixture.close();
   });
 
-  it("refuses to start Vite when this run's backend bound a different port", async () => {
-    // An earlier instance left its own number behind...
-    writeFileSync(fixture.portFile, `${fixture.port}\n`);
-    // ...and then the backend THIS run started publishes the port it walked to.
-    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port + 1}\n`), PUBLISH_DELAY_MS);
-
-    const { code, out } = await runCli(fixture);
-    clearTimeout(publish);
-
-    assert.equal(code, 1, `expected a non-zero exit so \`&& vite\` does not run:\n${out}`);
-    assert.match(out, /REFUSING to start Vite/);
-    assert.match(out, /2650/);
-  });
-
-  it("starts Vite when this run's backend bound the port Vite targets", async () => {
-    writeFileSync(fixture.portFile, `${fixture.port}\n`);
-    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port}\n`), PUBLISH_DELAY_MS);
+  it("waits on the WALKED-TO port, not the one PORT asked for", async () => {
+    // The #2650 shape: `PORT` names a port the backend could not take, so it
+    // bound another and published that. Nothing is listening on UNSERVED_PORT,
+    // so a wait that watched it would time out; following the publish succeeds.
+    rmSync(fixture.portFile, { force: true });
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_DELAY_MS);
 
     const { code, out } = await runCli(fixture);
     clearTimeout(publish);
 
     assert.equal(code, 0, out);
-    assert.doesNotMatch(out, /REFUSING/);
-    assert.match(out, /backend ready on :/);
+    assert.match(out, new RegExp(`backend ready on :${fixture.boundPort}`));
+    assert.match(out, /published by this backend/);
+    assert.doesNotMatch(out, new RegExp(`ready on :${UNSERVED_PORT}`));
   });
 
-  it("refuses when this run published before the waiter could snapshot (startup ordering)", async () => {
-    // Both reviewers landed on this one independently. The dev panes start
-    // concurrently with no ordering guarantee, so a slow client pane snapshots
-    // a `.server-port` THIS run already wrote. `wasRepublished` cannot see a
-    // publish that precedes the snapshot, and the earlier version merely warned
-    // here — starting Vite into the broken session it had just diagnosed.
-    writeFileSync(fixture.portFile, `${fixture.port + 7}\n`);
-
-    const { code, out } = await runCli(fixture);
-
-    assert.equal(code, 1, `a readable disagreement must stop \`&& vite\` even unattributed:\n${out}`);
-    assert.match(out, /REFUSING to start Vite/);
-    assert.doesNotMatch(out, /backend ready on :/);
-  });
-
-  it("does not accept a pre-existing MATCHING port as proof", async () => {
-    // Codex's reciprocal case. An older backend holding the proxy target leaves
-    // `.server-port` reading that very port, while this run's backend writes its
-    // new session token before it ever reaches `app.listen`. Calling that
-    // "ready" hands Vite the new token pointed at the old listener — the same
-    // 401, by the opposite route. Nothing this run wrote, so nothing is proven.
-    writeFileSync(fixture.portFile, `${fixture.port}\n`);
+  it("does not follow a leftover file from a dead run", async () => {
+    // Present before the wait begins and never rewritten, so it cannot speak for
+    // this startup. Falling back to `PORT` is right: at least that is what Vite
+    // will fall back to as well, so the two still agree.
+    writeFileSync(fixture.portFile, `${fixture.boundPort}\n`);
 
     const { code, out } = await runCli(fixture);
 
     assert.equal(code, 0, out);
-    assert.match(out, /could not confirm which backend holds/);
-    assert.doesNotMatch(out, /backend ready on :/);
+    assert.doesNotMatch(out, /published by this backend/);
+    // And it must not call that "ready": with the default port busy, whatever
+    // answered is the OTHER instance (Codex, #2981).
+    assert.doesNotMatch(out, /backend ready on/);
   });
 
-  it("--reset clears the file, so a later publish is attributable to this startup", async () => {
-    // The rule that ends the ambiguity: `yarn dev` clears `.server-port` before
-    // either pane starts, so anything found afterwards belongs to this run.
-    writeFileSync(fixture.portFile, `${fixture.port}\n`);
-    const { code } = await runCli(fixture, ["--reset"]);
-
-    assert.equal(code, 0);
+  it("--reset makes a later publish attributable", async () => {
+    writeFileSync(fixture.portFile, "1\n");
+    const reset = await runCli(fixture, { port: UNSERVED_PORT, args: ["--reset"] });
+    assert.equal(reset.code, 0);
     assert.equal(existsSync(fixture.portFile), false, "--reset must remove the stale port file");
 
-    // With the file cleared, the same walked-forward publish is now provable.
-    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.port + 1}\n`), PUBLISH_DELAY_MS);
-    const run = await runCli(fixture);
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_DELAY_MS);
+    const { code, out } = await runCli(fixture);
     clearTimeout(publish);
 
-    assert.equal(run.code, 1, run.out);
-    assert.match(run.out, /REFUSING to start Vite/);
+    assert.equal(code, 0, out);
+    assert.match(out, /published by this backend/);
   });
 
-  it("after --reset, a correct port published before the snapshot starts Vite at once", async () => {
-    // The server winning the process-start race. `--reset` guarantees the file
-    // is this startup's, so there is nothing to wait for — an earlier version
-    // spent the whole settle window here and then called it unconfirmed, which
-    // turns a healthy hot start into a ~10s delay.
+  it("PORT=0 is usable now — the published port is the answer config time could not compute", async () => {
+    // `assertProxyablePort` refused this outright before, because an
+    // OS-assigned port was unknowable when Vite evaluated its config. It is
+    // knowable now: the backend binds it and says so.
     rmSync(fixture.portFile, { force: true });
-    await runCli(fixture, ["--reset"]);
-    writeFileSync(fixture.portFile, `${fixture.port}\n`); // published before the waiter starts
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_DELAY_MS);
 
-    const startedAt = Date.now();
-    const { code, out } = await runCli(fixture);
-    const elapsedMs = Date.now() - startedAt;
+    const { code, out } = await runCli(fixture, { port: 0 });
+    clearTimeout(publish);
 
     assert.equal(code, 0, out);
-    assert.match(out, /backend ready on :/);
-    assert.ok(elapsedMs < 5000, `expected no settle-window stall, took ${elapsedMs}ms:\n${out}`);
+    assert.match(out, new RegExp(`backend ready on :${fixture.boundPort}`));
   });
 
-  it("says so plainly when nothing published a port at all", async () => {
+  it("never reports readiness for a port nothing attributed to this startup", async () => {
+    // The publication times out (nothing ever publishes) while the requested
+    // port IS answering — the shape where another instance holds it. Claiming
+    // "ready" there is the exact over-claim this file exists to avoid.
     rmSync(fixture.portFile, { force: true });
-
-    const { code, out } = await runCli(fixture);
+    const { code, out } = await runCli(fixture, { port: fixture.boundPort });
 
     assert.equal(code, 0, out);
-    assert.match(out, /could not confirm which backend holds/);
-    assert.doesNotMatch(out, /REFUSING/);
+    assert.doesNotMatch(out, /backend ready on/);
+    assert.match(out, /never published a port/);
+    assert.match(out, /restart `yarn dev`|set PORT/);
+  });
+
+  it("never refuses to start Vite — following removes the mismatch it used to guard", async () => {
+    // The previous design exited 1 when the published port disagreed with the
+    // proxy target. Vite follows now, so disagreement is not a state that
+    // exists; nothing here should ever stop the client pane.
+    rmSync(fixture.portFile, { force: true });
+    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_DELAY_MS);
+
+    const { code, out } = await runCli(fixture);
+    clearTimeout(publish);
+
+    assert.equal(code, 0, out);
+    assert.doesNotMatch(out, /REFUS/i);
   });
 });
