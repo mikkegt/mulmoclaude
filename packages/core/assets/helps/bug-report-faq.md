@@ -138,5 +138,6 @@ Speech settings resolve through fallbacks that raise no error, so read the scrip
 `speechParams` block against the speaker reference in `mulmoscript.md` (§ speechParams) before
 treating it as a bug. Three mechanisms explain nearly every report: a `lang` entry replaces the
 whole speaker rather than extending it, each delivery option reaches some providers and is dropped
-by others, and the per-beat audio cache key is built from the speaker's own fields — so editing one
-of them re-records the script. Which field is missing decides which symptom you are looking at.
+by others, and the audio cache key of each beat is built from the speaker's own fields — so editing
+one of them re-records every beat that speaker narrates. Which field is missing decides which
+symptom you are looking at.

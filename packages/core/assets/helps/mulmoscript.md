@@ -251,15 +251,19 @@ missing `OPENAI_API_KEY` (or rejects the Gemini voice name) even though the
 script names Gemini everywhere.
 
 ```json
-"Presenter": {
-  "provider": "gemini",
-  "voiceId": "Kore",
-  "speechOptions": { "instruction": "Warm and unhurried." },
-  "lang": {
-    "ja": {
+{
+  "speakers": {
+    "Presenter": {
       "provider": "gemini",
       "voiceId": "Kore",
-      "speechOptions": { "instruction": "Warm and unhurried." }
+      "speechOptions": { "instruction": "Warm and unhurried." },
+      "lang": {
+        "ja": {
+          "provider": "gemini",
+          "voiceId": "Kore",
+          "speechOptions": { "instruction": "Warm and unhurried." }
+        }
+      }
     }
   }
 }
