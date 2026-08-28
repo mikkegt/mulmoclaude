@@ -41,6 +41,10 @@ const COLOR_CLASS_RE = /^(?:bg|text|border|ring|fill|from|via|to|outline|divide|
 // whitespace run before an optional `declare` is the same backtracking shape.
 const EXPORT_LINE_RE = /^export (?:declare )?(?:const|function|class|interface|type|enum) ([A-Za-z_$][\w$]*)/;
 const SOURCE_RE = /@source\s+"([^"]+)"/g;
+// A CSS comment. Tailwind's parser ignores what is inside one, so a gate that
+// does not would read a commented-out `@source` as live — passing while the
+// build omits the palette again, which is the exact failure it exists to catch.
+const COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 const SOURCE_EXTS = [".ts", ".tsx", ".vue"];
 
 /** The utility a class token names, with any variant prefix (`hover:`) removed. */
@@ -60,9 +64,15 @@ export function exportedNamesIn(source) {
     .filter((name) => name !== undefined);
 }
 
-/** Every path a CSS file hands to `@source`, in the order they appear. */
+/** `css` with every comment blanked out. Spaces rather than removal, so the rest
+ *  of the file keeps its offsets. */
+export function withoutComments(css) {
+  return css.replace(COMMENT_RE, (match) => " ".repeat(match.length));
+}
+
+/** Every path a CSS file hands to a LIVE `@source`, in the order they appear. */
 export function sourceTargetsIn(css) {
-  return [...css.matchAll(SOURCE_RE)].map((match) => match[1]);
+  return [...withoutComments(css).matchAll(SOURCE_RE)].map((match) => match[1]);
 }
 
 /** Does a resolved `@source` target cover `file`? A target is either the file

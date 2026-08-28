@@ -9,7 +9,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { colorClassesIn, exportedNamesIn, findGaps, sourceCovers, sourceTargetsIn } from "../../../scripts/packages/check-plugin-tailwind-source.mjs";
+import {
+  colorClassesIn,
+  exportedNamesIn,
+  findGaps,
+  sourceCovers,
+  sourceTargetsIn,
+  withoutComments,
+} from "../../../scripts/packages/check-plugin-tailwind-source.mjs";
 
 describe("colorClassesIn", () => {
   it("takes the coloured utilities a palette spells out, variants included", () => {
@@ -50,6 +57,23 @@ describe("sourceTargetsIn", () => {
 
   it("finds nothing in a plain entry — the state that produced the bug", () => {
     assert.deepEqual(sourceTargetsIn('@import "tailwindcss";\n'), []);
+  });
+
+  // Tailwind's parser ignores comments, so a gate that reads one as live would
+  // pass on a CSS whose build emits nothing (Codex review iter-1).
+  it("does not read a commented-out directive as live", () => {
+    assert.deepEqual(sourceTargetsIn('@import "tailwindcss";\n/* @source "../a.ts"; */\n'), []);
+  });
+
+  it("still reads a live directive that a comment merely sits beside", () => {
+    assert.deepEqual(sourceTargetsIn('/* why this is here */\n@source "../a.ts";\n'), ["../a.ts"]);
+  });
+});
+
+describe("withoutComments", () => {
+  it("keeps the length, so nothing after a comment shifts", () => {
+    const css = "a/* xx */b";
+    assert.equal(withoutComments(css), "a        b");
   });
 });
 

@@ -38,7 +38,11 @@ export function colorClassesIn(source: string): Set<string>;
 /** Every symbol `source` exports by name. */
 export function exportedNamesIn(source: string): string[];
 
-/** Every path a CSS file hands to `@source`, in the order they appear. */
+/** `css` with every comment blanked to spaces (length preserved), so a
+ *  commented-out directive is never read as live. */
+export function withoutComments(css: string): string;
+
+/** Every path a CSS file hands to a LIVE `@source`, in the order they appear. */
 export function sourceTargetsIn(css: string): string[];
 
 /** Whether a resolved `@source` target covers `file` — the file itself, or a
