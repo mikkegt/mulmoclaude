@@ -28,8 +28,9 @@ dollar.
 `mathjax-full` loads lazily on the first formula, exactly as `mermaid` does — a document with
 no math pulls in nothing.
 
-The inline rules reject a digits-only body only when it carries a thousands separator
-(`$1,000$`, a price written twice). They used to reject every digits-and-separators body, which
+The inline rules reject a numeric body only when it is thousands-grouped (`$1,000$`,
+`$12,345,678$` — a price written twice; a lone comma is a decimal point in most of Europe, so
+`$1,5$` typesets). They used to reject every digits-and-separators body, which
 was too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are how a maths article writes a
 number, and both came out with the dollars still in the prose. The shapes that actually appear
 in currency text were already covered by the other rules — `$100 と $200` by the

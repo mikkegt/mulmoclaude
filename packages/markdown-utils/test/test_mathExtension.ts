@@ -40,10 +40,18 @@ describe("inline `$…$` — strict delimiter rules", () => {
     assert.doesNotMatch(render("Cost: $5-$10 range."), PENDING);
   });
 
-  it("leaves a thousands-separated number alone", () => {
-    // The comma is the signature of a price written twice, and it is the only
-    // digits-and-separators body rule 5 still rejects.
+  it("leaves a thousands-grouped number alone", () => {
+    // Digits in threes is the signature of a price written twice, and it is the
+    // only numeric body rule 5 still rejects.
     assert.doesNotMatch(render("total $1,000$ only"), PENDING);
+    assert.doesNotMatch(render("total $12,345,678$ only"), PENDING);
+    assert.doesNotMatch(render("total $1,000.50$ only"), PENDING);
+  });
+
+  it("typesets a decimal comma, which is how most of Europe writes 1.5", () => {
+    // Rejecting every comma would leave those authors with literal dollars in
+    // their prose. Three digits after it is what says "grouping" instead.
+    assert.match(render("etwa $1,5$ mal"), PENDING);
   });
 
   it("typesets a plain number, which is what a maths article writes", () => {

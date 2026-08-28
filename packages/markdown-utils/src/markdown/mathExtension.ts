@@ -33,20 +33,28 @@
 //   4. The character AFTER the closing `$` must not be an ASCII digit
 //      (`$5-$10`).
 //   5. The body must be non-empty, single-line, and must be something a
-//      formula could be ABOUT: a thousands-separated number (`$1,000$`,
-//      a price written twice) or separators with no digits at all
-//      (`$+$`) are not.
+//      formula could be ABOUT: a thousands-grouped number (`$1,000$`, a
+//      price written twice) or separators with no digits at all (`$+$`)
+//      are not.
 //
 // Rule 5 used to reject EVERY digits-and-separators body, and that was
 // too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are the
 // ordinary way to write a number in a maths article, and both came out
 // as a literal `$10000$` / `$1$` sitting in the prose. The signature of
-// a price is the COMMA — `$1,000$` — and the two shapes that actually
+// a price is THOUSANDS GROUPING — `$1,000$`, `$12,345,678$`, digits in
+// threes — and the two shapes that actually
 // appear in currency prose are already dead: `$100 と $200` by rule 3
 // (whitespace before the close) and `$5-$10` by rule 4 (a digit after
 // it). What stays admitted is a body like `$5$`, which a person quoting
 // a price does not write: they write `$5`, and it is the DOUBLED
 // delimiter that makes it maths.
+//
+// The grouping is matched rather than the comma alone, because a comma
+// is a DECIMAL POINT in most of Europe: `$1,5$` is one and a half, and
+// rejecting every comma left those authors with literal dollars in
+// their prose (codex, #2985). Three digits after the comma is what says
+// "grouping", and `$1,500$` is genuinely ambiguous — it is read as the
+// price, which is the reading that was already there.
 //
 // Rules 2-5 are enforced in the tokenizer, where the whole match is in
 // hand. Rule 1 needs the character BEFORE the match, which a marked
@@ -74,9 +82,28 @@ interface MathToken extends Tokens.Generic {
 
 const ASCII_ALNUM = /[A-Za-z0-9]/;
 const ASCII_DIGIT = /\d/;
-/** Digits, separators and currency-ish punctuation only. Paired with a
- *  comma test rather than used alone — see rule 5. */
-const DIGITS_AND_SEPARATORS = /^[\s\d.,:;%+-]*$/;
+const ONE_TO_THREE_DIGITS = /^\d{1,3}$/;
+const THREE_DIGITS = /^\d{3}$/;
+const DIGITS = /^\d+$/;
+
+/** A number written with thousands grouping, optionally with decimals:
+ *  `1,000`, `12,345,678`, `1,000.50`. A price written twice, not an
+ *  equation — and NOT `1,5`, which is a decimal comma.
+ *
+ *  Split into steps rather than written as one pattern because the
+ *  pattern needs a bounded quantifier inside a repeat
+ *  (`\d{1,3}(?:,\d{3})+`), which `security/detect-unsafe-regex` refuses
+ *  on star-height alone. Each test here is anchored and linear. */
+function isThousandsGrouped(body: string): boolean {
+  const [whole, decimals, ...extra] = body.split(".");
+  if (extra.length > 0 || whole === undefined) return false;
+  if (decimals !== undefined && !DIGITS.test(decimals)) return false;
+  const groups = whole.split(",");
+  const lead = groups.shift();
+  if (groups.length === 0 || lead === undefined) return false;
+  if (!ONE_TO_THREE_DIGITS.test(lead)) return false;
+  return groups.every((group) => THREE_DIGITS.test(group));
+}
 /** The same set with the digits removed: a body of punctuation has
  *  nothing to typeset. */
 const SEPARATORS_ONLY = /^[\s.,:;%+-]*$/;
@@ -109,9 +136,9 @@ export function isPlausibleInlineMath(body: string, after: string): boolean {
   if (body.endsWith("\\")) return false;
   // Rule 4: `$5-$10`.
   if (ASCII_DIGIT.test(after)) return false;
-  // Rule 5. A thousands separator is what says "price"; a plain number is
+  // Rule 5. Thousands grouping is what says "price"; a plain number is
   // just a number, and a number in a maths article is maths.
-  if (body.includes(",") && DIGITS_AND_SEPARATORS.test(body)) return false;
+  if (isThousandsGrouped(body)) return false;
   if (SEPARATORS_ONLY.test(body)) return false;
   return true;
 }
