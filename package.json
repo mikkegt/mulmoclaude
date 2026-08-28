@@ -83,6 +83,7 @@
     "package": "node scripts/package.mjs"
   },
   "resolutions": {
+    "sharp": "^0.35.4",
     "tar": "7.5.22",
     "undici": "7.29.0",
     "uuid": "14.0.2"
