@@ -9,10 +9,10 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
-import os from "node:os";
 import { wasRepublished, type FileSnapshot } from "./lib/publishedPort.js";
 import { describeRejection, parsePublishedPort, resolveServerPort } from "./lib/devServerPort.js";
 import { waitForPort } from "./lib/waitForPort.js";
+import { resolveDevWorkspacePath } from "./lib/devWorkspace.js";
 import { parseEnvFile } from "../server/utils/launch-env.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
@@ -35,22 +35,12 @@ function resolveTimeoutMs(raw: string | undefined): number {
   return parsed;
 }
 
-// Mirrors `WORKSPACE_PATHS.serverPort`, resolved the way `vite.config.ts`
-// resolves the workspace — the backend writes the port it actually bound there
-// right after `app.listen`.
-//
-// An EMPTY value counts as unset, at both sources. The server reads this with
-// `||`, and `vite.config.ts`'s regex needs `(.+)`, so neither of them can end
-// up with `""` — and `path.join("", ".server-port")` would silently point this
-// check at the current directory instead of the workspace, where it would find
-// nothing and report every startup as unattributable (CodeRabbit, #2975).
-const nonEmpty = (value: string | undefined): value is string => value !== undefined && value.length > 0;
-
+// Mirrors `WORKSPACE_PATHS.serverPort`. The workspace itself is resolved by the
+// shared helper, so this and `vite.config.ts` cannot end up looking in different
+// directories — they used to, because the config matched the assignment with its
+// own regex while this used the launcher's parser (Codex, #2981).
 function resolveServerPortPath(envFileValues: Record<string, string>): string {
-  const fromProcess = process.env.MULMOCLAUDE_WORKSPACE_PATH;
-  const fromFile = envFileValues.MULMOCLAUDE_WORKSPACE_PATH;
-  const workspace = nonEmpty(fromProcess) ? fromProcess : nonEmpty(fromFile) ? fromFile : path.join(os.homedir(), "mulmoclaude");
-  return path.join(workspace, ".server-port");
+  return path.join(resolveDevWorkspacePath({ processEnv: process.env, envFileValues }), ".server-port");
 }
 
 function snapshotFile(filePath: string): FileSnapshot {

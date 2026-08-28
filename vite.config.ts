@@ -6,29 +6,27 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createDevWatchIgnore } from './scripts/lib/devWatchIgnore'
+import { resolveDevWorkspacePath } from './scripts/lib/devWorkspace'
 import { assertProxyablePort, describeRejection, resolveProxyTarget, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
 import { parseEnvFile } from './server/utils/launch-env.mjs'
+
+// `.env` as the launcher's parser sees it — the same `dotenv.parse` the server's
+// own loader uses. Read once, here, because BOTH things the dev client takes out
+// of `.env` depend on it: where the workspace is, and which port to proxy to.
+const ENV_FILE_VALUES = parseEnvFile(path.join(process.cwd(), '.env')).parsed
 
 // Token file path mirrors `WORKSPACE_PATHS.sessionToken` in
 // server/workspace-paths.ts. Duplicated here (rather than imported)
 // because Vite config runs outside the TS server tsconfig.
 //
-// Honors MULMOCLAUDE_WORKSPACE_PATH (via process.env or directly
-// parsing .env file) so the dev token plugin reads the same workspace
-// the server is using. Local patch 2026-05-30 to fix the unauthorized
-// error when workspace is relocated.
+// Honors MULMOCLAUDE_WORKSPACE_PATH (via process.env or `.env`) so the dev token
+// plugin reads the same workspace the server is using. The resolution is shared
+// with the readiness wait (`resolveDevWorkspacePath`) rather than written twice:
+// this file used to match the assignment with its own regex, which keeps quotes
+// and inline comments that `dotenv.parse` strips, so a quoted path sent the two
+// halves of the dev client to different directories (#2981).
 function resolveWorkspacePath(): string {
-  const fromProcess = process.env.MULMOCLAUDE_WORKSPACE_PATH
-  if (fromProcess && fromProcess.length > 0) return fromProcess
-  try {
-    const envPath = path.join(process.cwd(), '.env')
-    const content = fs.readFileSync(envPath, 'utf-8')
-    const assigned = content.match(/^MULMOCLAUDE_WORKSPACE_PATH=(.+)$/m)?.[1]
-    if (assigned !== undefined) return assigned.trim()
-  } catch {
-    /* .env not present, fall through to default */
-  }
-  return path.join(os.homedir(), 'mulmoclaude')
+  return resolveDevWorkspacePath({ processEnv: process.env, envFileValues: ENV_FILE_VALUES })
 }
 const TOKEN_FILE_PATH = path.join(resolveWorkspacePath(), '.session-token')
 const TOKEN_PLACEHOLDER = '__MULMOCLAUDE_AUTH_TOKEN__'
@@ -46,7 +44,7 @@ const PORT_RESOLUTION = resolveServerPort({
   // The launcher's parser — i.e. `dotenv.parse`, the same one the server's loader
   // uses. Reading the file by hand here would let the two disagree about inline
   // comments, an `export ` prefix or quoting, which is this bug one level down.
-  envFileValues: parseEnvFile(path.join(process.cwd(), '.env')).parsed
+  envFileValues: ENV_FILE_VALUES
 })
 // Reported only when it still matters. `PORT=0` is a problem for config-time
 // resolution and no problem at all once the backend has published the port it
