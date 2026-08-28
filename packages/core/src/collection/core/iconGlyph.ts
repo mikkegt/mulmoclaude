@@ -26,6 +26,12 @@ const MATERIAL_SYMBOL_NAME_RE = /^[a-z0-9_]+$/;
  *  literal glyph (emoji, a single letter) drawn as plain text. */
 export type IconGlyph = { kind: "symbol"; name: string } | { kind: "glyph"; text: string };
 
+/** Drawn when neither the value nor the surface's own fallback says anything.
+ *  Without it a blank `fallback` resolves to an EMPTY glyph and the surface
+ *  renders a hole — this function promises a drawable result for every input,
+ *  so the promise needs a floor. */
+export const DEFAULT_ICON = "dataset";
+
 /** The first grapheme CLUSTER of `text`.
  *
  *  Splitting by code point instead would drop the variation selector from
@@ -46,14 +52,16 @@ function firstGrapheme(text: string): string {
 /** Classify a schema-authored icon value.
  *
  *  `raw` empty / blank / absent falls back to `fallback` (the per-surface
- *  default such as `"dataset"`), which is classified by the same rule — so a
- *  caller can never smuggle an unrenderable default past the guard.
+ *  default such as `"dataset"`), and a blank `fallback` in turn to
+ *  {@link DEFAULT_ICON}. Both are classified by the same rule — so a caller
+ *  can never smuggle an unrenderable default past the guard, and the result
+ *  is always something drawable.
  *
- *  A non-name value is cut to ONE grapheme: the box it draws into is a fixed
- *  square, so bounding the glyph count is what makes overflow impossible by
- *  construction rather than by hoping values stay short. */
+ *  A non-name value is cut to ONE grapheme. That bounds the character count,
+ *  not the rendered width — see the containment note in
+ *  `plugin-vue/IconGlyph.ts` for the other half. */
 export function resolveIconGlyph(raw: string | undefined, fallback: string): IconGlyph {
-  const value = (raw ?? "").trim() || fallback.trim();
+  const value = (raw ?? "").trim() || fallback.trim() || DEFAULT_ICON;
   if (MATERIAL_SYMBOL_NAME_RE.test(value)) return { kind: "symbol", name: value };
   return { kind: "glyph", text: firstGrapheme(value) };
 }

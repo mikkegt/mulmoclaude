@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-import { resolveIconGlyph } from "@mulmoclaude/core/collection";
+import { DEFAULT_ICON, resolveIconGlyph } from "@mulmoclaude/core/collection";
 
 const FALLBACK = "dataset";
 
@@ -87,11 +87,26 @@ describe("resolveIconGlyph — fallback", () => {
     assert.deepEqual(resolveIconGlyph("", "Not A Name"), { kind: "glyph", text: "N" });
   });
 
-  it("never throws and always yields a non-empty result", () => {
-    [undefined, "", " ", "🎙️", "podcasts", "𐍈"].forEach((raw) => {
-      const resolved = resolveIconGlyph(raw, FALLBACK);
-      const text = resolved.kind === "symbol" ? resolved.name : resolved.text;
-      assert.ok(text.length > 0, JSON.stringify(raw));
+  it("falls through to DEFAULT_ICON when the fallback itself is blank", () => {
+    // Otherwise the surface renders a hole: the value is empty, so is the
+    // fallback, and the glyph branch draws "".
+    [" ", "", "\t"].forEach((blank) => {
+      assert.deepEqual(resolveIconGlyph(undefined, blank), { kind: "symbol", name: DEFAULT_ICON }, JSON.stringify(blank));
+      assert.deepEqual(resolveIconGlyph("   ", blank), { kind: "symbol", name: DEFAULT_ICON }, JSON.stringify(blank));
     });
+  });
+
+  it("never throws and always yields a non-empty result", () => {
+    // The fallback is varied too — a blank one is exactly how the empty-glyph
+    // hole got in while this assertion still passed.
+    const raws = [undefined, "", " ", "🎙️", "podcasts", "𐍈", "\t\n", "Not A Name"];
+    const fallbacks = [FALLBACK, "", " ", "📚", "Not A Name"];
+    raws.forEach((raw) =>
+      fallbacks.forEach((fallback) => {
+        const resolved = resolveIconGlyph(raw, fallback);
+        const text = resolved.kind === "symbol" ? resolved.name : resolved.text;
+        assert.ok(text.length > 0, `${JSON.stringify(raw)} / ${JSON.stringify(fallback)}`);
+      }),
+    );
   });
 });

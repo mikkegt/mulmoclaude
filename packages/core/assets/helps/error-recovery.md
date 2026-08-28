@@ -250,7 +250,9 @@ An **emoji is a valid alternative** and is often the better choice: it
 is in colour and stands out among the monochrome glyphs, which is the
 point when several collections would otherwise share a look-alike icon
 (`podcasts` / `rss_feed` / `menu_book`). Set `"icon": "🎙️"` the same way you
-would set a name. Only the first character is drawn, so use exactly one.
+would set a name. Only the first GRAPHEME is drawn — one emoji, whatever
+number of code points it is built from (a variation selector, a skin tone, a
+ZWJ family) — so write exactly one glyph and nothing after it.
 
 If the smearing persists after the value is corrected, the surface
 drawing it is bypassing `IconGlyph`

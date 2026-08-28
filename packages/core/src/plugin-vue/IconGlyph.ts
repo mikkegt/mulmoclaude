@@ -13,7 +13,7 @@
 // cost more than it buys.
 
 import { h, type FunctionalComponent, type VNode } from "vue";
-import { resolveIconGlyph } from "../collection/core/iconGlyph.ts";
+import { DEFAULT_ICON, resolveIconGlyph } from "../collection/core/iconGlyph.ts";
 
 // Each prop spells out `| undefined` rather than relying on `?` alone:
 // consumers build under `exactOptionalPropertyTypes`, where `icon?: string`
@@ -35,7 +35,6 @@ export interface IconGlyphProps {
   ariaLabel?: string | undefined;
 }
 
-const DEFAULT_FALLBACK = "dataset";
 const DEFAULT_SIZE_CLASS = "text-base";
 
 // Containment is an inline style, NOT Tailwind utilities, and that is
@@ -73,7 +72,7 @@ const GLYPH_CONTAINMENT = { display: "inline-block", maxWidth: "1.25em", overflo
 
 export const IconGlyph: FunctionalComponent<IconGlyphProps> = (props): VNode => {
   const sizeClass = props.sizeClass ?? DEFAULT_SIZE_CLASS;
-  const glyph = resolveIconGlyph(props.icon, props.fallback ?? DEFAULT_FALLBACK);
+  const glyph = resolveIconGlyph(props.icon, props.fallback ?? DEFAULT_ICON);
   if (glyph.kind === "symbol") {
     return h("span", { class: ["material-symbols-outlined", sizeClass], style: SYMBOL_CONTAINMENT }, glyph.name);
   }
