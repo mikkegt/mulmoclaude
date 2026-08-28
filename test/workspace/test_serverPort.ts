@@ -30,6 +30,42 @@ afterEach(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
+/** Reads the file as fast as the event loop allows, recording every distinct
+ *  state it manages to observe. `<missing>` stands for ENOENT, which is its own
+ *  kind of half-written. */
+function watchFile(watchedPath: string): { stop: () => Promise<Set<string>> } {
+  const observed = new Set<string>();
+  const state = { reading: true };
+  const loop = (async () => {
+    while (state.reading) {
+      try {
+        observed.add(readFileSync(watchedPath, "utf-8"));
+      } catch {
+        observed.add("<missing>");
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  })();
+  return {
+    stop: async () => {
+      state.reading = false;
+      await loop;
+      return observed;
+    },
+  };
+}
+
+/** Every observation must be one of the ports that was really published — not a
+ *  truncation of one, and not an empty file. */
+function assertOnlyWholePorts(observed: Set<string>, ports: number[]): void {
+  const allowed = new Set(ports.map(formatServerPort));
+  const bad = [...observed].filter((value) => !allowed.has(value));
+  assert.deepEqual(bad, [], `a concurrent reader saw a state that is neither port: ${JSON.stringify(bad)}`);
+  [...observed].forEach((value) => {
+    assert.ok(ports.includes(parsePublishedPort(value) ?? -1), `unusable observation ${JSON.stringify(value)}`);
+  });
+}
+
 describe("publishServerPort", () => {
   it("writes the port the way a shell hook expects to read it", async () => {
     await publishServerPort(3002, portPath);
@@ -52,33 +88,11 @@ describe("publishServerPort", () => {
     const ROUNDS = 60;
     writeFileSync(portPath, formatServerPort(OLD_PORT));
 
-    const observed = new Set<string>();
-    const state = { reading: true };
-    const reader = (async () => {
-      while (state.reading) {
-        try {
-          observed.add(readFileSync(portPath, "utf-8"));
-        } catch {
-          // ENOENT is its own kind of half-state; record it as such.
-          observed.add("<missing>");
-        }
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    })();
-
+    const watcher = watchFile(portPath);
     for (let round = 0; round < ROUNDS; round += 1) {
       await publishServerPort(round % 2 === 0 ? NEW_PORT : OLD_PORT, portPath);
     }
-    state.reading = false;
-    await reader;
-
-    const allowed = new Set([formatServerPort(OLD_PORT), formatServerPort(NEW_PORT)]);
-    const bad = [...observed].filter((value) => !allowed.has(value));
-    assert.deepEqual(bad, [], `a concurrent reader saw a state that is neither port: ${JSON.stringify(bad)}`);
-    // And every observation resolves to a port that was really published.
-    [...observed].forEach((value) => {
-      assert.ok([OLD_PORT, NEW_PORT].includes(parsePublishedPort(value) ?? -1), `unusable observation ${JSON.stringify(value)}`);
-    });
+    assertOnlyWholePorts(await watcher.stop(), [OLD_PORT, NEW_PORT]);
   });
 });
 
