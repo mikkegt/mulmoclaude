@@ -1,13 +1,13 @@
-import { defineConfig, type Plugin } from "vite";
-import vue from "@vitejs/plugin-vue";
-import tailwindcss from "@tailwindcss/vite";
-import { AsyncLocalStorage } from "node:async_hooks";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { createDevWatchIgnore } from "./scripts/lib/devWatchIgnore";
-import { assertProxyablePort, describeRejection, resolveProxyTarget, resolveServerPort, serverOrigins } from "./scripts/lib/devServerPort";
-import { parseEnvFile } from "./server/utils/launch-env.mjs";
+import { defineConfig, type Plugin } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createDevWatchIgnore } from './scripts/lib/devWatchIgnore'
+import { assertProxyablePort, describeRejection, resolveProxyTarget, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
+import { parseEnvFile } from './server/utils/launch-env.mjs'
 
 // Token file path mirrors `WORKSPACE_PATHS.sessionToken` in
 // server/workspace-paths.ts. Duplicated here (rather than imported)
@@ -18,20 +18,20 @@ import { parseEnvFile } from "./server/utils/launch-env.mjs";
 // the server is using. Local patch 2026-05-30 to fix the unauthorized
 // error when workspace is relocated.
 function resolveWorkspacePath(): string {
-  const fromProcess = process.env.MULMOCLAUDE_WORKSPACE_PATH;
-  if (fromProcess && fromProcess.length > 0) return fromProcess;
+  const fromProcess = process.env.MULMOCLAUDE_WORKSPACE_PATH
+  if (fromProcess && fromProcess.length > 0) return fromProcess
   try {
-    const envPath = path.join(process.cwd(), ".env");
-    const content = fs.readFileSync(envPath, "utf-8");
-    const assigned = content.match(/^MULMOCLAUDE_WORKSPACE_PATH=(.+)$/m)?.[1];
-    if (assigned !== undefined) return assigned.trim();
+    const envPath = path.join(process.cwd(), '.env')
+    const content = fs.readFileSync(envPath, 'utf-8')
+    const assigned = content.match(/^MULMOCLAUDE_WORKSPACE_PATH=(.+)$/m)?.[1]
+    if (assigned !== undefined) return assigned.trim()
   } catch {
     /* .env not present, fall through to default */
   }
-  return path.join(os.homedir(), "mulmoclaude");
+  return path.join(os.homedir(), 'mulmoclaude')
 }
-const TOKEN_FILE_PATH = path.join(resolveWorkspacePath(), ".session-token");
-const TOKEN_PLACEHOLDER = "__MULMOCLAUDE_AUTH_TOKEN__";
+const TOKEN_FILE_PATH = path.join(resolveWorkspacePath(), '.session-token')
+const TOKEN_PLACEHOLDER = '__MULMOCLAUDE_AUTH_TOKEN__'
 
 // Where the dev proxy sends `/api` and the pubsub socket. Read from the same
 // place the backend reads its own port (#2650): a literal `localhost:3001` meant
@@ -46,10 +46,10 @@ const PORT_RESOLUTION = resolveServerPort({
   // The launcher's parser — i.e. `dotenv.parse`, the same one the server's loader
   // uses. Reading the file by hand here would let the two disagree about inline
   // comments, an `export ` prefix or quoting, which is this bug one level down.
-  envFileValues: parseEnvFile(path.join(process.cwd(), ".env")).parsed,
-});
+  envFileValues: parseEnvFile(path.join(process.cwd(), '.env')).parsed
+})
 for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
-  console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`);
+  console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`)
 }
 
 // What the backend ACTUALLY bound, which is not always what it was asked for:
@@ -62,18 +62,27 @@ for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
 // backend has published. So by the time this config is evaluated the file holds
 // this run's port — and `yarn dev` cleared it beforehand, so a leftover from a
 // dead run cannot be mistaken for it.
+//
+// Gated on an env var that ONLY `yarn dev` sets, because that guarantee is
+// `yarn dev`'s and not the file's: `yarn dev:client` and `dev:client:e2e` run
+// Vite with no backend and no `--reset`, so whatever `.server-port` holds there
+// is a leftover, and following it would address a port nothing is on. Those
+// keep targeting what `PORT` implies, exactly as before.
+const FOLLOWS_PUBLISHED_PORT = process.env.MULMOCLAUDE_DEV_FOLLOW_PORT === '1'
+
 function readPublishedPort(): string | null {
+  if (!FOLLOWS_PUBLISHED_PORT) return null
   try {
-    return fs.readFileSync(path.join(resolveWorkspacePath(), ".server-port"), "utf-8");
+    return fs.readFileSync(path.join(resolveWorkspacePath(), '.server-port'), 'utf-8')
   } catch {
-    return null;
+    return null
   }
 }
-const PROXY_TARGET = resolveProxyTarget(readPublishedPort(), PORT_RESOLUTION);
-if (PROXY_TARGET.source === "published" && PROXY_TARGET.port !== PORT_RESOLUTION.port) {
-  console.info(`[vite] proxying to :${PROXY_TARGET.port} — the port the backend actually bound (PORT resolved to :${PORT_RESOLUTION.port})`);
+const PROXY_TARGET = resolveProxyTarget(readPublishedPort(), PORT_RESOLUTION)
+if (PROXY_TARGET.source === 'published' && PROXY_TARGET.port !== PORT_RESOLUTION.port) {
+  console.info(`[vite] proxying to :${PROXY_TARGET.port} — the port the backend actually bound (PORT resolved to :${PORT_RESOLUTION.port})`)
 }
-const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET.port);
+const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET.port)
 
 // `PORT=0` (or a whitespace-only PORT, which coerces to 0) leaves the backend on an
 // OS-assigned port that no proxy target can name, so the dev server must refuse to
@@ -82,12 +91,12 @@ const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET
 // over it would be its own bug.
 function proxyPortGuardPlugin(): Plugin {
   return {
-    name: "mulmoclaude-proxy-port-guard",
-    apply: "serve",
+    name: 'mulmoclaude-proxy-port-guard',
+    apply: 'serve',
     configResolved() {
-      assertProxyablePort(PORT_RESOLUTION, PROXY_TARGET);
-    },
-  };
+      assertProxyablePort(PORT_RESOLUTION, PROXY_TARGET)
+    }
+  }
 }
 
 // The workspace-is-the-Vite-root comparison below has to survive symlinked
@@ -96,9 +105,9 @@ function proxyPortGuardPlugin(): Plugin {
 // doesn't exist yet (first boot) keeps its literal path.
 function realpathOrSelf(candidate: string): string {
   try {
-    return fs.realpathSync.native(candidate);
+    return fs.realpathSync.native(candidate)
   } catch {
-    return candidate;
+    return candidate
   }
 }
 
@@ -108,8 +117,8 @@ const devWatchIgnore = createDevWatchIgnore({
   projectRoot: realpathOrSelf(import.meta.dirname),
   workspacePath: realpathOrSelf(resolveWorkspacePath()),
   platform: process.platform,
-  watchPackageDists: process.env.MULMOCLAUDE_DEV_WATCH_PACKAGES === "1",
-});
+  watchPackageDists: process.env.MULMOCLAUDE_DEV_WATCH_PACKAGES === '1',
+})
 
 // Dev-side half of the bearer-token injection (#272). The server
 // writes the token to `TOKEN_FILE_PATH` at startup (mode 0600); this
@@ -128,12 +137,12 @@ function readDevToken(): string {
   // without a running server (playwright.config.ts sets it), and
   // (b) future debugging / alternative dev workflows. Production
   // never reads env — Express is always the source of truth there.
-  const fromEnv = process.env.MULMOCLAUDE_AUTH_TOKEN;
-  if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
+  const fromEnv = process.env.MULMOCLAUDE_AUTH_TOKEN
+  if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv
   try {
-    return fs.readFileSync(TOKEN_FILE_PATH, "utf-8").trim();
+    return fs.readFileSync(TOKEN_FILE_PATH, 'utf-8').trim()
   } catch {
-    return "";
+    return ''
   }
 }
 
@@ -142,9 +151,9 @@ function readDevToken(): string {
 // before comparing — matching only the bare literals would classify a real
 // loopback client as remote.
 function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return false;
-  const bare = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
-  return bare === "::1" || bare === "127.0.0.1" || bare.startsWith("127.");
+  if (!address) return false
+  const bare = address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address
+  return bare === '::1' || bare === '127.0.0.1' || bare.startsWith('127.')
 }
 
 // Carries "did this request arrive on the loopback interface?" from the
@@ -152,7 +161,7 @@ function isLoopbackAddress(address: string | undefined): boolean {
 // `transformIndexHtml` (which cannot — `IndexHtmlTransformContext` has no
 // `req`). AsyncLocalStorage rather than a module-level variable because
 // concurrent requests would otherwise read each other's value.
-const requestFromLoopback = new AsyncLocalStorage<boolean>();
+const requestFromLoopback = new AsyncLocalStorage<boolean>()
 
 // Every path this dev server forwards to Express. Kept in sync with
 // `server.proxy` below — a prefix added there without being added here is
@@ -166,28 +175,28 @@ const requestFromLoopback = new AsyncLocalStorage<boolean>();
 //
 // Exported for that test alone — this module is the dev server's config and
 // loads node builtins, so client code under `src/` can never import it.
-export const PROXIED_BACKEND_PREFIXES = ["/api", "/artifacts", "/htmlfile", "/ws"] as const;
+export const PROXIED_BACKEND_PREFIXES = ['/api', '/artifacts', '/htmlfile', '/ws'] as const
 
 function startsWithProxiedPrefix(url: string | undefined): boolean {
-  return PROXIED_BACKEND_PREFIXES.some((prefix) => url?.startsWith(prefix) ?? false);
+  return PROXIED_BACKEND_PREFIXES.some((prefix) => url?.startsWith(prefix) ?? false)
 }
 
 function mulmoclaudeAuthTokenPlugin(): Plugin {
   return {
-    name: "mulmoclaude-auth-token",
+    name: 'mulmoclaude-auth-token',
     // **Dev only.** In production the built index.html keeps the
     // placeholder; Express substitutes it per-request when serving
     // the file (see `server/index.ts` prod static handler). If this
     // plugin ran at build time too, the placeholder would be baked
     // out to whatever value the builder happened to see — wrong for
     // every subsequent user.
-    apply: "serve",
+    apply: 'serve',
     // Registered from the `configureServer` body (not a returned function)
     // so it runs BEFORE Vite's own html-serving middleware, and therefore
     // before `transformIndexHtml` reads the store.
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const fromLoopback = isLoopbackAddress(req.socket.remoteAddress);
+        const fromLoopback = isLoopbackAddress(req.socket.remoteAddress)
         // Backend surface stays loopback-only even when the dev server is
         // bound to every interface. These paths are PROXIED to Express, and
         // some of them (`/api/files/*`, the `/artifacts/*` static mounts)
@@ -197,13 +206,13 @@ function mulmoclaudeAuthTokenPlugin(): Plugin {
         // the proxy's own loopback socket, not the real client. Refusing
         // here is the only layer that can still tell the two apart.
         if (!fromLoopback && startsWithProxiedPrefix(req.url)) {
-          res.statusCode = 403;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Forbidden: backend access is loopback-only" }));
-          return;
+          res.statusCode = 403
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'Forbidden: backend access is loopback-only' }))
+          return
         }
-        requestFromLoopback.run(fromLoopback, next);
-      });
+        requestFromLoopback.run(fromLoopback, next)
+      })
 
       // WebSocket handshakes never reach the middleware above — Node routes
       // them to the http server's `upgrade` event instead. Without this the
@@ -214,11 +223,11 @@ function mulmoclaudeAuthTokenPlugin(): Plugin {
       // handler, and only backend prefixes are destroyed — Vite's HMR socket
       // is left alone, otherwise enabling LAN mode would break the very page
       // it is meant to serve.
-      server.httpServer?.prependListener("upgrade", (req, socket) => {
-        if (isLoopbackAddress(socket.remoteAddress)) return;
-        if (!startsWithProxiedPrefix(req.url)) return;
-        socket.destroy();
-      });
+      server.httpServer?.prependListener('upgrade', (req, socket) => {
+        if (isLoopbackAddress(socket.remoteAddress)) return
+        if (!startsWithProxiedPrefix(req.url)) return
+        socket.destroy()
+      })
     },
     transformIndexHtml(html) {
       // The session token is a bearer credential for the whole API, so it
@@ -231,10 +240,10 @@ function mulmoclaudeAuthTokenPlugin(): Plugin {
       // check, opting into `MULMOCLAUDE_DEV_LAN` would hand a full-API
       // credential to anyone who can load the page, and Express would see
       // every proxied call as loopback-sourced and trust it.
-      const fromLoopback = requestFromLoopback.getStore() ?? false;
-      return html.replace(TOKEN_PLACEHOLDER, fromLoopback ? readDevToken() : "");
+      const fromLoopback = requestFromLoopback.getStore() ?? false
+      return html.replace(TOKEN_PLACEHOLDER, fromLoopback ? readDevToken() : '')
     },
-  };
+  }
 }
 
 // Runtime-plugin importmap rewrite for production builds (#1043 C-2
@@ -252,23 +261,23 @@ function runtimeImportmapBuildPlugin(): Plugin {
   // `build.rollupOptions.input` below. After build, the dev URL gets
   // rewritten to the hashed asset path.
   const ENTRIES: Array<{ devUrl: string; chunkName: string }> = [
-    { devUrl: "/src/_runtime/vue.ts", chunkName: "runtime-vue" },
-    { devUrl: "/src/_runtime/protocol-vue.ts", chunkName: "runtime-protocol-vue" },
-  ];
+    { devUrl: '/src/_runtime/vue.ts', chunkName: 'runtime-vue' },
+    { devUrl: '/src/_runtime/protocol-vue.ts', chunkName: 'runtime-protocol-vue' },
+  ]
   return {
-    name: "mulmoclaude-runtime-importmap",
-    apply: "build",
+    name: 'mulmoclaude-runtime-importmap',
+    apply: 'build',
     transformIndexHtml: {
-      order: "post",
+      order: 'post',
       handler(html, ctx) {
-        if (!ctx.bundle) return html;
-        let next = html;
+        if (!ctx.bundle) return html
+        let next = html
         for (const { devUrl, chunkName } of ENTRIES) {
-          let runtimeFile: string | null = null;
+          let runtimeFile: string | null = null
           for (const [fileName, chunk] of Object.entries(ctx.bundle)) {
-            if (chunk.type === "chunk" && chunk.name === chunkName) {
-              runtimeFile = fileName;
-              break;
+            if (chunk.type === 'chunk' && chunk.name === chunkName) {
+              runtimeFile = fileName
+              break
             }
           }
           if (!runtimeFile) {
@@ -277,24 +286,24 @@ function runtimeImportmapBuildPlugin(): Plugin {
             // silently leave the dev URL in the built importmap and
             // break runtime-loaded plugins in production with no
             // diagnostic. CodeRabbit review on PR #1124.
-            console.warn(`[mulmoclaude] runtime importmap chunk not emitted: ${chunkName} (importmap entry "${devUrl}" left as dev URL)`);
-            continue;
+            console.warn(`[mulmoclaude] runtime importmap chunk not emitted: ${chunkName} (importmap entry "${devUrl}" left as dev URL)`)
+            continue
           }
           // `replaceAll` (not `replace`) so both occurrences get
           // rewritten — the importmap target AND any comment that
           // documents the dev URL.
-          next = next.replaceAll(devUrl, `/${runtimeFile}`);
+          next = next.replaceAll(devUrl, `/${runtimeFile}`)
         }
-        return next;
+        return next
       },
     },
-  };
+  }
 }
 
 export default defineConfig({
   plugins: [vue(), tailwindcss(), mulmoclaudeAuthTokenPlugin(), runtimeImportmapBuildPlugin(), proxyPortGuardPlugin()],
   build: {
-    outDir: "dist/client",
+    outDir: 'dist/client',
     rollupOptions: {
       // `index.html` is the SPA entry. `runtime-vue` is a side-entry
       // that emits a separate chunk for the runtime importmap target
@@ -303,12 +312,12 @@ export default defineConfig({
       // build-time `import` references it — the importmap is consumed
       // by the BROWSER, not by Vite's static analysis.
       input: {
-        index: path.resolve(import.meta.dirname, "index.html"),
-        "runtime-vue": path.resolve(import.meta.dirname, "src/_runtime/vue.ts"),
+        index: path.resolve(import.meta.dirname, 'index.html'),
+        'runtime-vue': path.resolve(import.meta.dirname, 'src/_runtime/vue.ts'),
         // Same pattern as runtime-vue: the importmap consumer is the
         // browser, not Vite's static analysis, so without this entry
         // the chunk gets tree-shaken out of the build.
-        "runtime-protocol-vue": path.resolve(import.meta.dirname, "src/_runtime/protocol-vue.ts"),
+        'runtime-protocol-vue': path.resolve(import.meta.dirname, 'src/_runtime/protocol-vue.ts'),
       },
       // Force every named re-export from `src/_runtime/vue.ts` to be
       // preserved in the emitted chunk. Without `'strict'`, Rolldown
@@ -321,7 +330,7 @@ export default defineConfig({
       // `'strict'` is the public-library mode and matches what we
       // want here: the entry's exports ARE the public surface for
       // browser-side consumers.
-      preserveEntrySignatures: "strict",
+      preserveEntrySignatures: 'strict',
       // Targeted build-time warning suppressions. EVERY entry here
       // matches by code AND file/message so unrelated occurrences of
       // the same warning code still surface.
@@ -336,10 +345,10 @@ export default defineConfig({
       //    plugins/scope.ts), so the dynamic import legitimately
       //    doesn't chunk-split — that's the intended outcome.
       onwarn(warning, defaultHandler) {
-        if (warning.code === "INEFFECTIVE_DYNAMIC_IMPORT" && warning.message.includes("PluginScopedRoot.vue")) {
-          return;
+        if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT' && warning.message.includes('PluginScopedRoot.vue')) {
+          return
         }
-        defaultHandler(warning);
+        defaultHandler(warning)
       },
     },
   },
@@ -356,7 +365,7 @@ export default defineConfig({
     // client still receives an EMPTY auth token (see
     // `mulmoclaudeAuthTokenPlugin`), so opting in exposes the page, not
     // the API. Only do it on a network you trust.
-    host: process.env.MULMOCLAUDE_DEV_LAN === "1" ? true : "127.0.0.1",
+    host: process.env.MULMOCLAUDE_DEV_LAN === '1' ? true : '127.0.0.1',
     watch: {
       ignored: [devWatchIgnore],
     },
@@ -374,23 +383,23 @@ export default defineConfig({
     // iframe hits Express directly — so this is dev-only.
     cors: false,
     proxy: {
-      "/api": {
+      '/api': {
         target: SERVER_ORIGIN,
-        changeOrigin: true,
+        changeOrigin: true
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/images', ...)).
       // Without this proxy, dev's Vite catch-all returns the SPA index.html instead.
-      "/artifacts/images": {
+      '/artifacts/images': {
         target: SERVER_ORIGIN,
-        changeOrigin: true,
+        changeOrigin: true
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/svg', ...)).
       // Same reason as `/artifacts/images`: `<img src="/artifacts/svg/...">` would
       // otherwise hit Vite's SPA catch-all and receive index.html (HTTP 200, HTML
       // body), which the browser silently fails to render as an image.
-      "/artifacts/svg": {
+      '/artifacts/svg': {
         target: SERVER_ORIGIN,
-        changeOrigin: true,
+        changeOrigin: true
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/html', ...)).
       // Without this proxy, Vite's HTML transform injects `/@vite/client` and
@@ -405,10 +414,10 @@ export default defineConfig({
       // the wrong origin and Safari would block every `<img src="../images/...">`
       // request (Chrome happens to be lenient because images route through the
       // same proxy).
-      "/artifacts/html": {
+      '/artifacts/html': {
         target: SERVER_ORIGIN,
         changeOrigin: true,
-        xfwd: true,
+        xfwd: true
       },
       // Static-mount on the backend (server/index.ts: app.use(HTML_FILE_MOUNT, ...)),
       // serving a page presentHtml was pointed AT rather than one it wrote — the
@@ -421,15 +430,15 @@ export default defineConfig({
       // `xfwd: true` for the same reason as `/artifacts/html`, and it bites
       // harder here: this mount serves the page's subresources (images, media)
       // too, so a CSP naming the backend origin blocks them.
-      "/htmlfile": {
+      '/htmlfile': {
         target: SERVER_ORIGIN,
         changeOrigin: true,
-        xfwd: true,
+        xfwd: true
       },
-      "/ws": {
+      '/ws': {
         target: SERVER_WS_ORIGIN,
-        ws: true,
-      },
-    },
-  },
-});
+        ws: true
+      }
+    }
+  }
+})

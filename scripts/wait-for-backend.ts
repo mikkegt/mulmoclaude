@@ -21,13 +21,6 @@ const POLL_INTERVAL_MS = 150;
 const PROBE_TIMEOUT_MS = 1000;
 const NOTICE_EVERY_MS = 5000;
 const DEFAULT_TIMEOUT_MS = 60_000;
-// How long to keep looking for this startup's own `.server-port` once the proxy
-// target turns out to be held by someone. Boot-to-publish measured ~3.7s here,
-// so this leaves headroom for a cold Windows boot; past it we say we could not
-// confirm rather than stalling the dev server or guessing. Only reachable when
-// `--reset` did not run (a waiter invoked on its own) — under `yarn dev` the
-// marker settles it without waiting.
-const PAIRING_SETTLE_MS = 10_000;
 // A `--reset` marker older than this cannot be describing the startup happening
 // now — generous enough for the slowest cold boot, short enough that a marker
 // orphaned by a crashed run does not mislead tomorrow's.
@@ -256,8 +249,14 @@ async function main(): Promise<void> {
   // Not the other way round: what `PORT` asked for and what the backend got are
   // the same only when the request could be honoured, and the whole of #2650 is
   // the case where it could not.
-  const publishDeadline = Math.min(startedAt + timeoutMs, Date.now() + PAIRING_SETTLE_MS);
-  const published = await awaitPublishedPort(portFile, before, publishDeadline, attributable);
+  //
+  // The publish gets the WHOLE budget, not a slice of it. It is no longer a
+  // secondary check that a separate wait could cover for — under `PORT=0` it is
+  // the only way the port can be known at all, and cutting it short would fall
+  // back to `:3001`, where the backend certainly is not (Codex, #2981). Nothing
+  // is lost by being generous: the backend publishes right AFTER it listens, so
+  // by the time this returns the accept below is immediate.
+  const published = await awaitPublishedPort(portFile, before, startedAt + timeoutMs, attributable);
 
   if (published === null) {
     // Nothing published: fall back to what `PORT` implies, which is also what

@@ -9,6 +9,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { htmlArtifactPreviewUrl, htmlFileUrl } from "@mulmoclaude/html-plugin";
 import viteConfig, { PROXIED_BACKEND_PREFIXES } from "../../vite.config.js";
 
@@ -63,6 +64,36 @@ describe("vite dev proxy", () => {
         true,
         `${prefix} is proxied to the backend but no PROXIED_BACKEND_PREFIXES entry covers it — it would be reachable from the LAN`,
       );
+    });
+  });
+});
+
+// #2981 — the proxy follows the port the backend published, but ONLY when a
+// `yarn dev` that also started that backend says so.
+//
+// The guarantee is the dev chain's, not the file's: `yarn dev` clears
+// `.server-port` before either pane starts and waits for this run's publish, so
+// what Vite reads is current. `yarn dev:client` / `dev:client:e2e` run Vite with
+// no backend and no reset, so the same file would be a leftover pointing at a
+// port nothing is on. The wiring that separates the two is a single env var in
+// package.json, which nothing else would catch if it were dropped.
+describe("published-port following is opt-in per dev script", () => {
+  const { scripts }: { scripts: Record<string, string> } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf-8"));
+  const FOLLOW = "MULMOCLAUDE_DEV_FOLLOW_PORT=1";
+
+  ["dev", "dev:debug", "dev:full-build"].forEach((name) => {
+    it(`${name} starts Vite with the backend it launched, so it follows`, () => {
+      assert.match(scripts[name] ?? "", new RegExp(`${FOLLOW}\\s+vite`), `${name} must opt Vite into following the published port`);
+    });
+
+    it(`${name} clears the stale port before either pane starts`, () => {
+      assert.match(scripts[name] ?? "", /wait:backend --reset/, `${name} must reset .server-port so the publish is attributable`);
+    });
+  });
+
+  ["dev:client", "dev:client:e2e"].forEach((name) => {
+    it(`${name} runs Vite alone, so it must NOT follow`, () => {
+      assert.doesNotMatch(scripts[name] ?? "", /MULMOCLAUDE_DEV_FOLLOW_PORT/, `${name} has no backend of its own; a published port would be a leftover`);
     });
   });
 });
