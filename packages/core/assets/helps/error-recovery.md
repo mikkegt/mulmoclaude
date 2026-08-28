@@ -398,6 +398,42 @@ missing key to `.env` (restart the server) or rewrite the script's
 keys configured. Don't retry the render unchanged — the same provider
 will fail the same way.
 
+## MulmoScript narration — wrong voice, ignored direction, or every beat re-recorded
+
+### Symptoms
+
+- A non-default language (`speechParams.speakers.<name>.lang.<code>`) renders
+  in a different voice, or fails on a missing `OPENAI_API_KEY` even though the
+  script names `gemini` everywhere.
+- `speechOptions.instruction` or `speed` has no audible effect on the narration.
+- A small edit to a speaker re-generates audio for **every** beat, including the
+  ones whose text never changed.
+
+### Cause
+
+Speech settings resolve through silent fallbacks — the schema does not reject a
+missing field, it fills one in:
+
+- A `lang` entry **replaces** the whole speaker; it does not extend it. Whatever
+  the entry omits falls back to the schema and provider defaults, so one holding
+  only `voiceId` loses `provider` (which then resolves to `openai`), `model`, and
+  `speechOptions`.
+- `instruction` is dropped by the `google` provider unless the speaker also sets
+  a `model`; `speed` is ignored by `gemini` altogether.
+- Each beat's audio file is cached under a hash of that beat's `text` plus the
+  speaker's `voiceId` + `provider` + `model` + `speechOptions`. Editing the
+  speaker is a new cache key for every beat that speaks through it — the whole
+  script when there is one speaker — so it is re-recorded and re-billed.
+
+### Fix
+
+Repeat every field the parent speaker sets — `provider` above all — inside each
+`lang` entry. Express pacing for Gemini through `instruction` rather than
+`speed`. Settle voice, model, and delivery **before** the first render — and when
+a change is genuinely wanted, say up front that every beat of that speaker
+re-records, rather than letting the bill surprise the user. Field-by-field
+reference: `config/helps/mulmoscript.md` → speechParams.
+
 ## Build / yarn workspace ordering
 
 ### Symptoms
