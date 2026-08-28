@@ -104,6 +104,37 @@ describe("renderMathNodes — sanitisation", () => {
   });
 });
 
+describe("renderMathNodes — accessibility", () => {
+  it("hides the SVG from assistive tech and exposes MathML instead", async () => {
+    await renderMathNodes(body);
+    // MathJax's SVG is `role="img"` with no accessible name, so on its
+    // own a screen reader announces an unlabelled graphic where the
+    // formula is. `AssistiveMmlHandler` marks it hidden and emits the
+    // MathML counterpart beside it.
+    const svgs = [...body.querySelectorAll("svg")];
+    assert.ok(svgs.length > 0);
+    assert.ok(svgs.every((svg) => svg.getAttribute("aria-hidden") === "true"));
+
+    const mathml = [...body.querySelectorAll("math")];
+    assert.equal(mathml.length, svgs.length);
+    // Real maths markup, not a LaTeX string read out character by
+    // character: `\\pi` must reach the reader as the symbol.
+    assert.ok(mathml.some((node) => node.textContent?.includes("π")));
+    assert.ok(mathml.every((node) => node.querySelector("mi, mo, mn, mrow") !== null));
+  });
+
+  it("keeps the MathML out of sight without removing it from the a11y tree", async () => {
+    await renderMathNodes(body);
+    const wrapper = body.querySelector(".math-a11y");
+    assert.ok(wrapper);
+    const style = wrapper.getAttribute("style") ?? "";
+    // `display:none` / `visibility:hidden` would drop the node from the
+    // accessibility tree, which is the entire point of keeping it.
+    assert.doesNotMatch(style, /display:\s*none|visibility:\s*hidden/);
+    assert.match(style, /clip-path:\s*inset\(50%\)/);
+  });
+});
+
 describe("renderMathNodes", () => {
   it("replaces every placeholder with a self-contained SVG", async () => {
     await renderMathNodes(body);

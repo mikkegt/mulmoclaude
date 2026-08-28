@@ -34,6 +34,16 @@
 // `<path>`, so nothing depends on an element the sanitiser removes.
 // Measured cost: ~5% more markup per formula.
 //
+// ACCESSIBILITY. MathJax's SVG carries `role="img"` and no accessible
+// name, so a screen reader meets an unlabelled graphic where the formula
+// is. `AssistiveMmlHandler` fixes that at the source: it marks the SVG
+// `aria-hidden="true"` and emits a MathML copy of the same expression
+// beside it, which assistive technology reads as maths rather than as a
+// picture or as raw LaTeX. That copy is visually hidden here with inline
+// styles rather than a class — this module ships no stylesheet and is
+// consumed by more than one host, so a host that never adopted our CSS
+// would otherwise render every formula twice.
+//
 // Sanitising rather than trimming the TeX package list is deliberate.
 // A package allow-list has to be re-audited every time MathJax adds an
 // extension; the sanitiser is a boundary that holds regardless, and it
@@ -41,7 +51,7 @@
 // `javascript:` one.
 
 import DOMPurify from "dompurify";
-import { adoptSvg } from "../dom/adoptSvg.js";
+import { parseMarkupBody } from "../dom/adoptSvg.js";
 
 /** Localised strings the render pipeline surfaces when it fails.
  *  Callers (composables) resolve the keys at component-setup time and
@@ -85,23 +95,27 @@ let typesetterPromise: Promise<MathTypesetter> | null = null;
  *  alias referring back to this function is circular, which resolves to
  *  `any` and silently unchecks every call below. */
 async function loadMathJax() {
-  const [{ mathjax }, { TeX }, { SVG }, { liteAdaptor }, { RegisterHTMLHandler }, { AllPackages }, { LiteElement }] = await Promise.all([
-    import("mathjax-full/js/mathjax.js"),
-    import("mathjax-full/js/input/tex.js"),
-    import("mathjax-full/js/output/svg.js"),
-    import("mathjax-full/js/adaptors/liteAdaptor.js"),
-    import("mathjax-full/js/handlers/html.js"),
-    import("mathjax-full/js/input/tex/AllPackages.js"),
-    import("mathjax-full/js/adaptors/lite/Element.js"),
-  ]);
-  return { mathjax, TeX, SVG, liteAdaptor, RegisterHTMLHandler, AllPackages, LiteElement };
+  const [{ mathjax }, { TeX }, { SVG }, { liteAdaptor }, { RegisterHTMLHandler }, { AllPackages }, { LiteElement }, { AssistiveMmlHandler }] =
+    await Promise.all([
+      import("mathjax-full/js/mathjax.js"),
+      import("mathjax-full/js/input/tex.js"),
+      import("mathjax-full/js/output/svg.js"),
+      import("mathjax-full/js/adaptors/liteAdaptor.js"),
+      import("mathjax-full/js/handlers/html.js"),
+      import("mathjax-full/js/input/tex/AllPackages.js"),
+      import("mathjax-full/js/adaptors/lite/Element.js"),
+      import("mathjax-full/js/a11y/assistive-mml.js"),
+    ]);
+  return { mathjax, TeX, SVG, liteAdaptor, RegisterHTMLHandler, AllPackages, LiteElement, AssistiveMmlHandler };
 }
 
 /** Build the one-shot TeX→SVG renderer.
  *
  *  `RegisterHTMLHandler` mutates a MathJax-global handler list, so it
  *  must run exactly once per page — memoising the whole builder in
- *  `typesetterPromise` is what guarantees that.
+ *  `typesetterPromise` is what guarantees that. `AssistiveMmlHandler`
+ *  wraps that handler so every formula also carries a MathML copy of
+ *  itself; see the ACCESSIBILITY note at the top of the file.
  *
  *  `doc` and `adaptor` stay captured in the closure rather than being
  *  handed back, so both calls keep the concrete types their imports
@@ -110,9 +124,9 @@ async function loadMathJax() {
  *  the real `instanceof` narrowing against the lite adaptor's own node
  *  class. */
 async function buildTypesetter(): Promise<MathTypesetter> {
-  const { mathjax, TeX, SVG, liteAdaptor, RegisterHTMLHandler, AllPackages, LiteElement } = await loadMathJax();
+  const { mathjax, TeX, SVG, liteAdaptor, RegisterHTMLHandler, AllPackages, LiteElement, AssistiveMmlHandler } = await loadMathJax();
   const adaptor = liteAdaptor();
-  RegisterHTMLHandler(adaptor);
+  AssistiveMmlHandler(RegisterHTMLHandler(adaptor));
   const doc = mathjax.document("", {
     InputJax: new TeX({ packages: AllPackages }),
     OutputJax: new SVG({ fontCache: "none" }),
@@ -141,6 +155,34 @@ async function loadTypesetter(): Promise<MathTypesetter> {
   return attempt;
 }
 
+// Visually hidden, still in the accessibility tree. The clip-rect idiom
+// rather than `display:none` / `visibility:hidden`, both of which remove
+// the node from that tree — which would defeat the whole point.
+const VISUALLY_HIDDEN =
+  "position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;";
+
+/** Split one formula's sanitised markup into the picture and its
+ *  screen-reader counterpart, both imported into the live document.
+ *  `mathml` is null when MathJax produced no assistive copy. */
+export function adoptFormula(markup: string): { svg: SVGElement; mathml: Element | null } | null {
+  const parsed = parseMarkupBody(markup);
+  const svg = parsed.querySelector("svg");
+  if (!svg) return null;
+  const math = parsed.querySelector("math");
+  return {
+    svg: document.importNode(svg, true),
+    mathml: math === null ? null : document.importNode(math, true),
+  };
+}
+
+function hiddenMathml(mathml: Element): HTMLElement {
+  const wrapper = document.createElement("span");
+  wrapper.className = "math-a11y";
+  wrapper.setAttribute("style", VISUALLY_HIDDEN);
+  wrapper.appendChild(mathml);
+  return wrapper;
+}
+
 function errorBox(message: string, className: string): HTMLElement {
   const box = document.createElement("code");
   box.className = className;
@@ -166,12 +208,13 @@ function renderOne(node: HTMLElement, typesetter: MathTypesetter, labels: MathRe
   const source = node.textContent ?? "";
   const display = node.dataset.mathDisplay === "1";
   try {
-    const svgNode = adoptSvg(typesetter.render(source, display));
-    if (!svgNode) throw new Error("MathJax produced malformed SVG");
+    const formula = adoptFormula(typesetter.render(source, display));
+    if (!formula) throw new Error("MathJax produced malformed SVG");
     // Keep the placeholder's own element (a `<div>` for block math, a
     // `<span>` inside a paragraph for inline) so the surrounding flow
     // is unchanged — only its contents and the pending flag change.
-    node.replaceChildren(svgNode);
+    node.replaceChildren(formula.svg);
+    if (formula.mathml) node.appendChild(hiddenMathml(formula.mathml));
     delete node.dataset.mathPending;
   } catch (err) {
     // Preserve the source next to the localised header so the author
