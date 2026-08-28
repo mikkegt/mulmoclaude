@@ -378,25 +378,28 @@ will fail the same way.
 
 ### Cause
 
-Speech settings resolve through silent fallbacks — nothing in the schema
-validates them, so a missing field is never an error:
+Speech settings resolve through silent fallbacks — the schema does not reject a
+missing field, it fills one in:
 
-- A `lang` entry **replaces** the whole speaker; it does not extend it. An entry
-  holding only `voiceId` loses `provider` (which then defaults to `openai`),
-  `model`, and `speechOptions`.
+- A `lang` entry **replaces** the whole speaker; it does not extend it. Whatever
+  the entry omits falls back to the schema and provider defaults, so one holding
+  only `voiceId` loses `provider` (which then resolves to `openai`), `model`, and
+  `speechOptions`.
 - `instruction` is dropped by the `google` provider unless the speaker also sets
   a `model`; `speed` is ignored by `gemini` altogether.
-- Each beat's audio file is cached under a hash of `text` + `voiceId` +
-  `provider` + `model` + `speechOptions`. Changing any of them is a new cache
-  key for every beat, so the whole script is re-recorded and re-billed.
+- Each beat's audio file is cached under a hash of that beat's `text` plus the
+  speaker's `voiceId` + `provider` + `model` + `speechOptions`. Editing the
+  speaker is a new cache key for every beat that speaks through it — the whole
+  script when there is one speaker — so it is re-recorded and re-billed.
 
 ### Fix
 
-Repeat `provider` / `model` / `speechOptions` inside every `lang` entry. Express
-pacing for Gemini through `instruction` rather than `speed`. Settle voice, model,
-and delivery **before** the first render — and when a change is genuinely wanted,
-tell the user the whole script re-records rather than letting the bill surprise
-them. Field-by-field reference: `config/helps/mulmoscript.md` → speechParams.
+Repeat every field the parent speaker sets — `provider` above all — inside each
+`lang` entry. Express pacing for Gemini through `instruction` rather than
+`speed`. Settle voice, model, and delivery **before** the first render — and when
+a change is genuinely wanted, say up front that every beat of that speaker
+re-records, rather than letting the bill surprise the user. Field-by-field
+reference: `config/helps/mulmoscript.md` → speechParams.
 
 ## Build / yarn workspace ordering
 

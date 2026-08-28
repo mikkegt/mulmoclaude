@@ -208,8 +208,9 @@ Configure TTS voices per speaker.
 | `lang` | No | Per-language speaker **replacement** — see below |
 
 Nothing here is validated against the provider: `model` is a free-form string,
-and a missing `provider` / `model` is never an error — it silently resolves to a
-default. A wrong choice is only audible, so set these deliberately.
+and a missing `provider` / `model` is not rejected when the script is parsed — it
+resolves to a default, which may then be wrong at render time or merely audible.
+Set them deliberately rather than relying on the fallback.
 
 ### Choosing a model
 
@@ -221,10 +222,11 @@ Gemini TTS accepts two models:
 | `gemini-2.5-pro-preview-tts` | ~2× the token price | The user asks for higher-quality or more expressive narration |
 
 **Decide before the first render.** Each beat's audio file is cached under a hash
-of `text` + `voiceId` + `provider` + `model` + `speechOptions`, so adding or
-changing any of them gives every beat a new cache key and **re-records the whole
-script** — a full round of billed TTS calls. Leave `model` out to track the
-provider default; add it only when you mean to pin a different model.
+of that beat's `text` plus the speaker's `voiceId` + `provider` + `model` +
+`speechOptions`. Rewriting one beat's text therefore re-records that beat alone,
+but touching the speaker changes the key of **every beat that speaks through it**
+— in a single-speaker script, the whole thing, billed again. Leave `model` out to
+track the provider default; add it only when you mean to pin a different model.
 
 ### `speechOptions`
 
@@ -241,11 +243,12 @@ line can be delivered differently without touching the speaker.
 
 ### `lang` — a replacement, not an override
 
-A `lang` entry **replaces the whole speaker** for that language. Nothing is
-inherited from the parent, so `provider`, `model`, and `speechOptions` have to be
-repeated inside it — an entry holding only `voiceId` resolves to the `openai`
-provider, which then fails on a missing `OPENAI_API_KEY` (or rejects the Gemini
-voice name), even though the script names Gemini everywhere.
+A `lang` entry **replaces the whole speaker** for that language: whatever it
+omits falls back to the schema and provider defaults, never to the parent's
+value. Repeat every field the parent sets — `provider` above all, since an entry
+holding only `voiceId` resolves to the `openai` provider and then fails on a
+missing `OPENAI_API_KEY` (or rejects the Gemini voice name) even though the
+script names Gemini everywhere.
 
 ```json
 "Presenter": {

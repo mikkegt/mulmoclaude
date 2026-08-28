@@ -27,7 +27,7 @@
 
 実行結果（`getSpeakerData`）:
 
-```
+```text
 Presenter/en : {"provider":"gemini","voiceId":"Kore","model":"gemini-2.5-pro-preview-tts",...}
 Presenter/ja : {"provider":"openai","voiceId":"Zephyr"}      ← lang エントリが置換して provider が openai へ
 NoProvider   : {"provider":"openai","voiceId":"Kore"}
