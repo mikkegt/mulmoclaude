@@ -130,6 +130,7 @@ import { requireSameOrigin } from "./api/csrfGuard.js";
 import { bearerAuth } from "./api/auth/bearerAuth.js";
 import { isViewDataPath } from "./api/auth/viewToken.js";
 import { deleteTokenFile, generateAndWriteToken, getCurrentToken } from "./api/auth/token.js";
+import { publishServerPort } from "./workspace/serverPort.js";
 import { log } from "./system/logger/index.js";
 import { logBackgroundError } from "./utils/logBackgroundError.js";
 import { isNonEmptyString } from "./utils/types.js";
@@ -1443,16 +1444,15 @@ process.on("SIGTERM", () => {
     // wiring it here costs nothing.
     startMacosReminderAdapter();
 
-    // Publish the actually-bound port so the hook script can
-    // address us — the requested PORT may have walked forward
-    // off a busy default. Use writeFile (not writeFileAtomic)
-    // because the file is tiny + ephemeral and the .tmp dance
-    // serves no purpose for a single-process write at boot.
+    // Publish the actually-bound port — the requested PORT may have
+    // walked forward off a busy default. The hook script addresses
+    // us through this, and `yarn dev` points Vite's proxy at it, so
+    // it has concurrent readers and the write has to be atomic
+    // (see `publishServerPort`).
     try {
-      const { writeFile } = await import("node:fs/promises");
-      await writeFile(WORKSPACE_PATHS.serverPort, `${port}\n`, { mode: 0o600 });
+      await publishServerPort(port);
     } catch (err) {
-      log.warn("server", "failed to write .server-port; LLM wiki-write hook will be unable to reach the server", {
+      log.warn("server", "failed to write .server-port; the LLM wiki-write hook and the dev proxy will be unable to reach the server", {
         error: String(err),
       });
     }
