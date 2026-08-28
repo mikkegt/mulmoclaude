@@ -252,20 +252,31 @@ async function main(): Promise<void> {
     // Nothing published: fall back to what `PORT` implies, which is also what
     // Vite will fall back to, so the two still agree.
     if (refuseUnknowablePort(resolution)) return;
-    await waitOn(resolution.port, timeoutMs - (Date.now() - startedAt), "assumed from PORT");
+    await waitOn(resolution.port, timeoutMs - (Date.now() - startedAt), false);
     return;
   }
-  await waitOn(published, timeoutMs - (Date.now() - startedAt), "published by this backend");
+  await waitOn(published, timeoutMs - (Date.now() - startedAt), true);
 }
 
 /** Wait for `port` to accept, and say which way we learned about it. */
-async function waitOn(port: number, budgetMs: number, provenance: string): Promise<void> {
+async function waitOn(port: number, budgetMs: number, verified: boolean): Promise<void> {
   const result = await awaitListener(port, Math.max(budgetMs, 0));
   if (!result.ready) {
     reportTimeout(port, result.waitedMs);
     return;
   }
-  log(`backend ready on :${port} (${provenance})`);
+  if (verified) {
+    log(`backend ready on :${port} (published by this backend)`);
+    return;
+  }
+  // Something answered, but nothing said it was ours. Saying "ready" here would
+  // be the claim this whole file exists to stop making: with the default port
+  // busy, the thing that answered is the OTHER instance, and the backend we
+  // started is still coming up somewhere else (Codex, #2981).
+  log(
+    `:${port} is answering, but this startup never published a port, so nothing confirms that is the backend it started. ` +
+      `Vite will proxy here. If the UI shows another instance's data or 401s, restart \`yarn dev\` once the backend is up, or set PORT to give it a port of its own.`,
+  );
 }
 
 // Always exit 0 — `yarn dev` chains this with `&& vite`, and taking the client

@@ -106,8 +106,10 @@ describe("wait-for-backend CLI — follows the port the backend published", () =
     const { code, out } = await runCli(fixture);
 
     assert.equal(code, 0, out);
-    assert.match(out, /assumed from PORT|still not listening/);
     assert.doesNotMatch(out, /published by this backend/);
+    // And it must not call that "ready": with the default port busy, whatever
+    // answered is the OTHER instance (Codex, #2981).
+    assert.doesNotMatch(out, /backend ready on/);
   });
 
   it("--reset makes a later publish attributable", async () => {
@@ -136,6 +138,19 @@ describe("wait-for-backend CLI — follows the port the backend published", () =
 
     assert.equal(code, 0, out);
     assert.match(out, new RegExp(`backend ready on :${fixture.boundPort}`));
+  });
+
+  it("never reports readiness for a port nothing attributed to this startup", async () => {
+    // The publication times out (nothing ever publishes) while the requested
+    // port IS answering — the shape where another instance holds it. Claiming
+    // "ready" there is the exact over-claim this file exists to avoid.
+    rmSync(fixture.portFile, { force: true });
+    const { code, out } = await runCli(fixture, { port: fixture.boundPort });
+
+    assert.equal(code, 0, out);
+    assert.doesNotMatch(out, /backend ready on/);
+    assert.match(out, /never published a port/);
+    assert.match(out, /restart `yarn dev`|set PORT/);
   });
 
   it("never refuses to start Vite — following removes the mismatch it used to guard", async () => {
