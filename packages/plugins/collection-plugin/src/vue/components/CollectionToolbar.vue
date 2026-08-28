@@ -131,7 +131,7 @@
           :data-testid="`collection-view-custom-${cv.id}`"
           @click="emit('setCustomView', cv.id)"
         >
-          <span class="material-symbols-outlined text-sm">{{ cv.icon || (cv.target === "mobile" ? "smartphone" : "dashboard_customize") }}</span>
+          <IconGlyph :icon="cv.icon" :fallback="cv.target === 'mobile' ? 'smartphone' : 'dashboard_customize'" size-class="text-sm" />
           <span>{{ cv.label }}</span>
         </button>
         <!-- "+" — ask Claude to author a new custom view for this collection.
@@ -224,6 +224,7 @@
 
 <script setup lang="ts">
 import { computed, watch } from "vue";
+import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
 import { useCollectionI18n } from "../lang";
 import { useClickOutside } from "../composables/useClickOutside";
 import { customViewKey, isCustomViewMode, type CollectionViewMode, type FlagFilterMode, type FlagFilterState } from "../collectionViewMode";

@@ -1093,7 +1093,7 @@ const MANAGE_COLLECTION_DEFINITION = {
       schema: {
         type: "object",
         description:
-          "putSchema: the full collection schema object (same shape as schema.json — title, icon, dataPath, primaryKey, fields, …). Call getSchema first for the current one, and schemaDocs for the field DSL.",
+          "putSchema: the full collection schema object (same shape as schema.json — title, icon, dataPath, primaryKey, fields, …). `icon` is either a Material Symbols name (lowercase letters, digits and underscores only — `podcasts`, `rss_feed`, `3d_rotation`; capitals/spaces/hyphens never match) or a SINGLE emoji. Prefer an emoji when the collection would otherwise share a look-alike glyph with another one — it is in colour and tells them apart in the launcher. Call getSchema first for the current one, and schemaDocs for the field DSL.",
       },
       topic: {
         type: "string",
