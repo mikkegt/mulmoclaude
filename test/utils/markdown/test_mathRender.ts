@@ -159,10 +159,11 @@ describe("renderMathNodes", () => {
 // from the user's own disk, and CSS positioning does not apply to SVG
 // child elements anyway. It is NOT fine for a host that renders
 // stranger-written markdown on a signed-in origin and has banned both
-// attributes at the markdown level; that host passes its own sanitiser.
+// attributes at the markdown level; that host passes its own extra pass,
+// which runs AFTER the baseline rather than instead of it.
 const STYLED_SOURCE = "$\\style{position:fixed;inset:0;background:#fff}{x}$ and $\\class{fixed inset-0}{y}$";
 
-describe("renderMathNodes — host sanitiser", () => {
+describe("renderMathNodes — host hardening pass", () => {
   const styledHost = async (): Promise<HTMLElement> => {
     const mathMd = new Marked();
     mathMd.use(mathExtension);
@@ -181,7 +182,25 @@ describe("renderMathNodes — host sanitiser", () => {
     host.remove();
   });
 
-  it("applies a stricter sanitiser when one is passed, and still draws the formula", async () => {
+  it("still strips a `javascript:` href when the host's pass would not have", async () => {
+    // THE BASELINE IS NOT A DEFAULT A CALLER CAN DECLINE (codex, #2983). The motivating host
+    // writes a targeted transformer — drop `class` and `style`, keep the rest — and a
+    // REPLACEMENT would have silently re-admitted the one thing `sanitizeMathSvg` exists to
+    // stop. `harden` runs after it, so the identity function below is safe by construction.
+    const mathMd = new Marked();
+    mathMd.use(mathExtension);
+    const { sanitizeMarkdownHtml } = await import("@mulmoclaude/core/plugin-vue");
+    const host = document.createElement("div");
+    host.innerHTML = sanitizeMarkdownHtml(mathMd.parse(XSS_SOURCE) as string);
+    document.body.appendChild(host);
+    await renderMathNodes(host, undefined, (markup) => markup);
+
+    assert.doesNotMatch(host.innerHTML, /javascript:/);
+    assert.match(host.innerHTML, /https:\/\/example\.com/);
+    host.remove();
+  });
+
+  it("applies a stricter policy when one is passed, and still draws the formula", async () => {
     const DOMPurify = (await import("dompurify")).default;
     const host = await styledHost();
     await renderMathNodes(host, undefined, (markup) => DOMPurify.sanitize(markup, { FORBID_ATTR: ["class", "style"] }));

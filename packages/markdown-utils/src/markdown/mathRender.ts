@@ -50,9 +50,9 @@
 // keeps a legitimate `\href{https://…}` working while dropping the
 // `javascript:` one.
 //
-// A HOST MAY NEED A STRICTER SANITISER THAN THE DEFAULT, which is why
-// `renderMathNodes` takes one. `sanitizeMathSvg` runs DOMPurify with its
-// defaults, and those keep `class` and `style` — while the TeX `html`
+// A HOST MAY NEED A STRICTER POLICY THAN THE DEFAULT, which is why
+// `renderMathNodes` takes an extra pass. `sanitizeMathSvg` runs DOMPurify with
+// its defaults, and those keep `class` and `style` — while the TeX `html`
 // package puts BOTH under the author's control:
 //
 //   $\style{position:fixed;inset:0;background:#fff}{x}$  →  <g style="position: fixed; …">
@@ -66,7 +66,14 @@
 // signed-in origin and has therefore banned author-controlled `class` /
 // `style` outright (mulmoserver's article renderer bans both precisely
 // because a utility-CSS framework turns a class name into positioning).
-// Such a host passes its own function; everyone else gets the default.
+// Such a host passes its own function.
+//
+// That function runs AFTER `sanitizeMathSvg`, never instead of it. The baseline
+// is not a default a caller can decline: a host writing the targeted transformer
+// this feature exists for — strip `class` and `style`, keep the rest — would
+// otherwise silently re-admit the `\href{javascript:…}` the baseline is there to
+// stop. Composing is what makes "may only tighten" a property of the code rather
+// than a sentence in a docstring (codex, #2983).
 
 import DOMPurify from "dompurify";
 import { parseMarkupBody } from "../dom/adoptSvg.js";
@@ -92,25 +99,26 @@ const DEFAULT_LABELS: MathRenderLabels = {
  *  `string → string` function keeps that out of every caller. */
 interface MathTypesetter {
   /** TeX source → `<mjx-container>…<svg>…` markup, passed through
-   *  `sanitize` before it is handed back. The sanitiser is an argument
-   *  rather than a build-time option because the typesetter is memoised
-   *  for the whole page (see `loadTypesetter`) while two callers on that
-   *  page may hold different policies. */
-  render: (tex: string, display: boolean, sanitize: MathSanitizer) => string;
+   *  `sanitizeMathSvg` and then through `harden` before it is handed
+   *  back. The extra pass is an argument rather than a build-time option
+   *  because the typesetter is memoised for the whole page (see
+   *  `loadTypesetter`) while two callers on that page may hold different
+   *  policies. */
+  render: (tex: string, display: boolean, harden: MathHardener) => string;
 }
 
-/** What a host may substitute for `sanitizeMathSvg`. Receives one
- *  formula's raw MathJax markup (`<mjx-container>` wrapping the `<svg>`,
- *  plus the assistive `<math>` twin) and returns what may enter the
- *  document.
+/** A host's EXTRA pass over one formula's markup, run after
+ *  `sanitizeMathSvg` and never in place of it. Receives what the baseline
+ *  left (`<mjx-container>` wrapping the `<svg>`, plus the assistive
+ *  `<math>` twin) and returns what may enter the document.
  *
- *  Two things a replacement must keep, or the formula degrades: the
- *  `<svg>` element itself (`adoptFormula` returns null without it, and
- *  the placeholder becomes an error box), and — for inline math to sit
- *  on the text baseline — the root `<svg>`'s own
- *  `style="vertical-align: …"`. A policy that strips `style` everywhere
- *  still renders; the formula just sits slightly high. */
-export type MathSanitizer = (markup: string) => string;
+ *  Two things it must keep, or the formula degrades: the `<svg>` element
+ *  itself (`adoptFormula` returns null without it, and the placeholder
+ *  becomes an error box), and — for inline math to sit on the text
+ *  baseline — the root `<svg>`'s own `style="vertical-align: …"`. A
+ *  policy that strips `style` everywhere still renders; the formula just
+ *  sits slightly high. */
+export type MathHardener = (markup: string) => string;
 
 /** DOMPurify pass over one formula's SVG. See the SANITISATION note at
  *  the top of the file: this is the only thing standing between a
@@ -167,10 +175,11 @@ async function buildTypesetter(): Promise<MathTypesetter> {
     OutputJax: new SVG({ fontCache: "none" }),
   });
   return {
-    render: (tex, display, sanitize) => {
+    render: (tex, display, harden) => {
       const node: unknown = doc.convert(tex, { display });
       if (!(node instanceof LiteElement)) throw new Error("MathJax returned an unexpected node type");
-      return sanitize(adaptor.outerHTML(node));
+      // Baseline first, host policy second. Never one or the other.
+      return harden(sanitizeMathSvg(adaptor.outerHTML(node)));
     },
   };
 }
@@ -236,14 +245,14 @@ function pendingNodes(root: Element | Document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>("[data-math-pending]"));
 }
 
-function renderOne(node: HTMLElement, typesetter: MathTypesetter, labels: MathRenderLabels, sanitize: MathSanitizer): void {
+function renderOne(node: HTMLElement, typesetter: MathTypesetter, labels: MathRenderLabels, harden: MathHardener): void {
   // `textContent` gives us the raw TeX — we escaped it going in and
   // DOMPurify preserves text verbatim, so entity decoding is
   // browser-native from the DOM read.
   const source = node.textContent ?? "";
   const display = node.dataset.mathDisplay === "1";
   try {
-    const formula = adoptFormula(typesetter.render(source, display, sanitize));
+    const formula = adoptFormula(typesetter.render(source, display, harden));
     if (!formula) throw new Error("MathJax produced malformed SVG");
     // Keep the placeholder's own element (a `<div>` for block math, a
     // `<span>` inside a paragraph for inline) so the surrounding flow
@@ -263,13 +272,14 @@ function renderOne(node: HTMLElement, typesetter: MathTypesetter, labels: MathRe
  *  failed one is replaced by an `.math-error` box, so neither matches
  *  a second time. `labels` defaults to English fallbacks so the pure
  *  module remains callable from tests / node environments without an
- *  i18n runtime, and `sanitize` defaults to `sanitizeMathSvg` — pass one
- *  only to tighten the policy, never to skip it (see the HOST note at
- *  the top of the file). */
+ *  i18n runtime. `harden` is an EXTRA pass over each formula's markup,
+ *  run after `sanitizeMathSvg` rather than instead of it, so it can only
+ *  ever narrow what reaches the page (see the HOST note at the top of
+ *  the file); it defaults to leaving the sanitised markup alone. */
 export async function renderMathNodes(
   root: Element | Document | null | undefined,
   labels: MathRenderLabels = DEFAULT_LABELS,
-  sanitize: MathSanitizer = sanitizeMathSvg,
+  harden: MathHardener = (markup) => markup,
 ): Promise<void> {
   if (!root) return;
   const nodes = pendingNodes(root);
@@ -286,5 +296,5 @@ export async function renderMathNodes(
     placeLoadError(nodes, err, labels);
     return;
   }
-  for (const node of nodes) renderOne(node, typesetter, labels, sanitize);
+  for (const node of nodes) renderOne(node, typesetter, labels, harden);
 }
