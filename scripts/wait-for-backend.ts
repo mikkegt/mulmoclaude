@@ -2,16 +2,16 @@
 // `yarn dev`'s client half waits here before starting Vite (#2975).
 //
 // Why this exists rather than a fixed sleep: see `scripts/lib/waitForPort.ts`.
-// Why waiting for the port is not on its own enough: see
-// `scripts/lib/backendPairing.ts`. This file is the wiring — resolve the port,
-// probe it, establish the pairing, report — and holds no policy of its own.
+// Why the port has to come from the backend rather than from `PORT`: see
+// `scripts/lib/publishedPort.ts`. This file is the wiring — learn the port,
+// wait for it, report — and holds no policy of its own.
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 import os from "node:os";
-import { classifyBoundPort, decideReadiness, wasRepublished, type FileSnapshot } from "./lib/backendPairing.js";
-import { describeRejection, resolveServerPort } from "./lib/devServerPort.js";
+import { wasRepublished, type FileSnapshot } from "./lib/publishedPort.js";
+import { describeRejection, parsePublishedPort, resolveServerPort } from "./lib/devServerPort.js";
 import { waitForPort } from "./lib/waitForPort.js";
 import { parseEnvFile } from "../server/utils/launch-env.mjs";
 
@@ -110,57 +110,19 @@ async function awaitRepublish(portFile: string, before: FileSnapshot, deadlineAt
   return false;
 }
 
-function reportMismatch(proxyTarget: number, boundPort: string): void {
-  log(
-    `REFUSING to start Vite: the backend started here bound port ${boundPort.trim()}, but Vite proxies to :${proxyTarget}. ` +
-      `:${proxyTarget} was busy, so the backend walked forward (see its own "Port ${proxyTarget} busy" line) while the dev client stayed pointed here. ` +
-      `The page would be served this run's session token and then 401 on every request against whatever else holds :${proxyTarget}, with nothing saying why (#2650). ` +
-      `Stop the other instance, or set PORT to run a second one.`,
-  );
-  process.exitCode = 1;
-}
-
 /**
- * Gather the evidence about who holds the proxy target.
+ * The port this run's backend actually bound, once it has said so.
  *
- * `attributable` means `--reset` cleared the file before either pane started,
- * so whatever is there now was written by this startup even if it landed before
- * the snapshot. Without it, a backend that wins the process-start race and
- * publishes the CORRECT port early would be waited out for the whole settle
- * window and then reported unconfirmed — a ~10s delay on a healthy start, which
- * is the opposite of what a readiness check is for (Codex, #2975).
- *
- * The shortcut applies only when the file is ALREADY there: in the ordinary
- * case `--reset` has just removed it and the publish is still seconds away, so
- * shortcutting then would read an absent file and call the startup unreadable.
+ * `attributable` means `--reset` cleared the file before either pane started, so
+ * whatever is there now was written by this startup even if it landed before the
+ * snapshot. The shortcut applies only when the file is ALREADY there: in the
+ * ordinary case `--reset` has just removed it and the publish is still seconds
+ * away, so shortcutting then would read an absent file (Codex, #2975).
  */
-async function attributedPort(
-  portFile: string,
-  before: FileSnapshot,
-  deadlineAt: number,
-  attributable: boolean,
-): Promise<{ raw: string | null; attributed: boolean }> {
+async function awaitPublishedPort(portFile: string, before: FileSnapshot, deadlineAt: number, attributable: boolean): Promise<number | null> {
   const alreadyPublished = attributable && snapshotFile(portFile).exists;
   const attributed = alreadyPublished || (await awaitRepublish(portFile, before, deadlineAt));
-  return { raw: readTextOrNull(portFile), attributed };
-}
-
-/** Compare the port the backend actually bound against the one Vite will target. */
-async function verifyProxyTarget(proxyTarget: number, portFile: string, before: FileSnapshot, deadlineAt: number, attributable: boolean): Promise<void> {
-  const { raw, attributed } = await attributedPort(portFile, before, deadlineAt, attributable);
-  switch (decideReadiness(classifyBoundPort(raw, proxyTarget), attributed)) {
-    case "refuse":
-      reportMismatch(proxyTarget, raw ?? "");
-      return;
-    case "ready":
-      log(`backend ready on :${proxyTarget}`);
-      return;
-    case "unconfirmed":
-      log(`could not confirm which backend holds :${proxyTarget} — this startup published no port within ${seconds(PAIRING_SETTLE_MS)}. Starting Vite anyway.`);
-      return;
-    default:
-      log(`backend is up but did not publish a readable port — starting Vite against :${proxyTarget}.`);
-  }
+  return attributed ? parsePublishedPort(readTextOrNull(portFile)) : null;
 }
 
 /**
@@ -285,30 +247,42 @@ async function main(): Promise<void> {
   }
 
   const resolution = resolveServerPort({ processEnv: process.env, envFileValues });
-  if (refuseUnknowablePort(resolution)) return;
-
-  const { port } = resolution;
   const timeoutMs = resolveTimeoutMs(process.env.MULMOCLAUDE_DEV_WAIT_MS);
   const startedAt = Date.now();
   const attributable = consumeResetMarker(portFile);
   const before = snapshotFile(portFile);
 
-  const result = await awaitListener(port, timeoutMs);
+  // Wait for the backend to say which port it bound, THEN wait for that port.
+  // Not the other way round: what `PORT` asked for and what the backend got are
+  // the same only when the request could be honoured, and the whole of #2650 is
+  // the case where it could not.
+  const publishDeadline = Math.min(startedAt + timeoutMs, Date.now() + PAIRING_SETTLE_MS);
+  const published = await awaitPublishedPort(portFile, before, publishDeadline, attributable);
+
+  if (published === null) {
+    // Nothing published: fall back to what `PORT` implies, which is also what
+    // Vite will fall back to, so the two still agree.
+    if (refuseUnknowablePort(resolution)) return;
+    await waitOn(resolution.port, timeoutMs - (Date.now() - startedAt), "assumed from PORT");
+    return;
+  }
+  await waitOn(published, timeoutMs - (Date.now() - startedAt), "published by this backend");
+}
+
+/** Wait for `port` to accept, and say which way we learned about it. */
+async function waitOn(port: number, budgetMs: number, provenance: string): Promise<void> {
+  const result = await awaitListener(port, Math.max(budgetMs, 0));
   if (!result.ready) {
     reportTimeout(port, result.waitedMs);
     return;
   }
-
-  // The port answering says something is there; it does not say it is ours.
-  // `.server-port` — which the backend writes with the port it ACTUALLY bound,
-  // right after listening — is what settles that.
-  await verifyProxyTarget(port, portFile, before, Math.min(startedAt + timeoutMs, Date.now() + PAIRING_SETTLE_MS), attributable);
+  log(`backend ready on :${port} (${provenance})`);
 }
 
-// Exit 0 on anything unexpected — `yarn dev` chains this with `&& vite`, and a
-// non-zero exit over a wait bug would take the client pane down. The one
-// deliberate non-zero is `reportMismatch`, where starting Vite is known to
-// produce a broken session.
+// Always exit 0 — `yarn dev` chains this with `&& vite`, and taking the client
+// pane down over a wait is worse than starting it late. There is nothing left to
+// refuse over: the proxy follows the port the backend published, so the client
+// and the backend cannot end up addressing different ones (#2981).
 main().catch((err: unknown) => {
   log(`wait failed, starting Vite anyway: ${String(err)}`);
 });

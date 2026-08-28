@@ -869,11 +869,18 @@ async function resolvePort(): Promise<number> {
     log.error("server", `Port ${requested} is in use and no free port found in ${requested}..${requested + MAX_PORT_PROBES - 1}.`);
     process.exit(1);
   }
-  // Warn, not info: the dev client is NOT following. Vite's proxy resolves its
-  // target from `PORT` (or the default) when its config is evaluated, in another
-  // process and before this walk happens — so a second `yarn dev` started without
-  // `PORT` ends up rendering the FIRST instance's data, with nothing failing (#2650).
-  log.warn("server", `Port ${requested} busy → using ${fallback} instead. The dev client still proxies to ${requested}; set PORT to run a second instance.`);
+  // Info, not warn: the dev client FOLLOWS this now (#2981). `yarn dev` waits for
+  // the port published below before starting Vite, and Vite reads it, so the
+  // proxy lands here rather than on the port that was asked for. It stayed a
+  // warning for as long as it did not — a second `yarn dev` without `PORT` used
+  // to render the FIRST instance's data with nothing failing (#2650).
+  //
+  // Still worth saying out loud: two instances sharing a workspace overwrite each
+  // other's `.session-token`, so `PORT` remains the right way to run a second one.
+  log.info(
+    "server",
+    `Port ${requested} busy → using ${fallback} instead. The dev client follows this port; set PORT to run a second instance against its own workspace.`,
+  );
   return fallback;
 }
 
