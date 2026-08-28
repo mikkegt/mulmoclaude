@@ -28,10 +28,11 @@ export interface IconGlyphProps {
    *  the CALL SITE, never defaulted to a value only this file names — see the
    *  note on containment below. */
   sizeClass?: string | undefined;
-  /** Accessible name for a literal glyph. Pass the collection / feed title
-   *  only where the surrounding control has no label of its own; where it
-   *  does (a button with its own `aria-label`), leave this off and the glyph
-   *  is marked decorative instead of announcing the name twice. */
+  /** Accessible name for the glyph, on BOTH rendering paths. Pass the
+   *  collection / feed title only where the surrounding control has no label
+   *  of its own; where it does (a button with its own `aria-label`), leave
+   *  this off and the glyph is marked decorative instead of announcing the
+   *  name twice. */
   ariaLabel?: string | undefined;
 }
 
@@ -70,13 +71,22 @@ const DEFAULT_SIZE_CLASS = "text-base";
 const SYMBOL_CONTAINMENT = { display: "inline-block", width: "1em", overflow: "hidden" } as const;
 const GLYPH_CONTAINMENT = { display: "inline-block", maxWidth: "1.25em", overflow: "hidden", lineHeight: "1" } as const;
 
+/** Both branches carry the same semantics, and the icon-font one needs them
+ *  MORE: its text content is the ligature NAME, so an unlabelled span makes a
+ *  screen reader announce "podcasts" / "rss_feed" as content. 48 icon spans
+ *  across this repo already mark themselves `aria-hidden`; these are the same
+ *  kind of span. */
+function labellingFor(ariaLabel: string | undefined): Record<string, string> {
+  return ariaLabel ? { role: "img", "aria-label": ariaLabel } : { "aria-hidden": "true" };
+}
+
 export const IconGlyph: FunctionalComponent<IconGlyphProps> = (props): VNode => {
   const sizeClass = props.sizeClass ?? DEFAULT_SIZE_CLASS;
   const glyph = resolveIconGlyph(props.icon, props.fallback ?? DEFAULT_ICON);
+  const labelling = labellingFor(props.ariaLabel);
   if (glyph.kind === "symbol") {
-    return h("span", { class: ["material-symbols-outlined", sizeClass], style: SYMBOL_CONTAINMENT }, glyph.name);
+    return h("span", { class: ["material-symbols-outlined", sizeClass], style: SYMBOL_CONTAINMENT, ...labelling }, glyph.name);
   }
-  const labelling = props.ariaLabel ? { role: "img", "aria-label": props.ariaLabel } : { "aria-hidden": "true" };
   return h("span", { class: sizeClass, style: GLYPH_CONTAINMENT, ...labelling }, glyph.text);
 };
 

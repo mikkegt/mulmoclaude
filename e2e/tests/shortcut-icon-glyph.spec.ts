@@ -106,6 +106,19 @@ test.describe("launcher shortcut icon glyph", () => {
     await expect(glyph).toHaveText("podcasts");
     await expect(glyph).toHaveClass(/material-symbols-outlined/);
   });
+
+  test("no glyph leaks its text content to assistive tech", async ({ page }) => {
+    // The icon-font span's text IS the ligature name, so an unlabelled one
+    // makes a screen reader announce "podcasts". The button already carries
+    // the title as its own aria-label, so every glyph here is decorative.
+    await Promise.all(
+      SEEDED_SHORTCUTS.map(async ({ slug, title }) => {
+        const button = shortcutButton(page, slug);
+        await expect(button).toHaveAttribute("aria-label", title);
+        await expect(button.locator("span").first()).toHaveAttribute("aria-hidden", "true");
+      }),
+    );
+  });
 });
 
 // Deliberately no `toHaveScreenshot` baseline. The suite runs on Linux in CI
