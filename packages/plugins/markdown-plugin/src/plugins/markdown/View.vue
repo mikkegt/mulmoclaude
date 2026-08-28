@@ -237,7 +237,9 @@ import { createAutoSaver } from "./autoSaver";
 import { rewriteMarkdownImageRefs } from "@mulmoclaude/markdown-utils/image/rewriteMarkdownImageRefs";
 import { findTaskLines, makeTasksInteractive, toggleTaskAt } from "@mulmoclaude/markdown-utils/markdown/taskList";
 import { mermaidExtension } from "@mulmoclaude/markdown-utils/markdown/mermaidExtension";
+import { mathExtension } from "@mulmoclaude/markdown-utils/markdown/mathExtension";
 import { useMermaidRenderer } from "../../utils/markdown/useMermaid";
+import { useMathRenderer } from "../../utils/markdown/useMath";
 import { usePdfExport } from "./usePdfExport";
 import { handleExternalLinkClick } from "@mulmoclaude/markdown-utils/dom/externalLink";
 import { buildPdfFilename } from "@mulmoclaude/markdown-utils/files/filename";
@@ -253,6 +255,7 @@ import MarpSplitEditor from "./MarpSplitEditor.vue";
 // would double-tokenise; module-level call fires exactly once per
 // bundle load.
 marked.use(mermaidExtension);
+marked.use(mathExtension);
 
 const t = useT();
 const { dispatch } = useRuntime();
@@ -833,6 +836,7 @@ const renderedHtml = computed(() => {
 
 const markdownContainerRef = ref<HTMLElement | null>(null);
 useMermaidRenderer(markdownContainerRef, renderedHtml);
+useMathRenderer(markdownContainerRef, renderedHtml);
 
 // Watch for scroll requests from viewState
 watch(
@@ -1602,5 +1606,29 @@ watch(
 
 .cancel-btn:hover {
   background: #d0d0d0;
+}
+
+/* MathJax SVG output. The SVG is drawn in `currentColor` and sized in
+   `ex` units, so it inherits the surrounding text colour and scale on
+   its own — these rules only handle flow: centre display math, let a
+   wide formula scroll instead of widening the whole document, and keep
+   an inline formula on the text baseline MathJax computed for it. */
+.markdown-content :deep(.math-block) {
+  display: block;
+  overflow-x: auto;
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.markdown-content :deep(.math-inline) {
+  display: inline-block;
+}
+
+.markdown-content :deep(.math-error) {
+  color: #b71c1c;
+  background: #fdecea;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85em;
 }
 </style>
