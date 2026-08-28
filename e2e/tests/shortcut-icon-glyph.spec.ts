@@ -21,6 +21,10 @@ const SEEDED_SHORTCUTS = [
   { kind: "collection", slug: "podcasts", title: "Podcasts", icon: "podcasts" },
   { kind: "collection", slug: "typo", title: "Typo Icon", icon: "not_a_glyph" },
   { kind: "collection", slug: "emoji", title: "Emoji Icon", icon: "🎙️" },
+  // One grapheme, but four code points joined by ZWJ. A font without the
+  // sequence draws the parts side by side, so the grapheme cut alone does not
+  // bound what this paints.
+  { kind: "collection", slug: "zwj", title: "Family Emoji", icon: "👨‍👩‍👧‍👦" },
   { kind: "collection", slug: "feeds", title: "Feeds", icon: "rss_feed" },
 ];
 
@@ -79,7 +83,14 @@ test.describe("launcher shortcut icon glyph", () => {
 
   test("every shortcut keeps the same 32px footprint whatever its icon value", async ({ page }) => {
     const widths = await Promise.all(SEEDED_SHORTCUTS.map(async ({ slug }) => (await shortcutButton(page, slug).boundingBox())?.width));
-    expect(widths).toEqual([32, 32, 32, 32]);
+    expect(widths).toEqual(SEEDED_SHORTCUTS.map(() => 32));
+  });
+
+  test("no icon value paints outside its button — including a multi-code-point emoji", async ({ page }) => {
+    // The grapheme cut bounds the character count, not the rendered width, so
+    // this asserts the property that actually matters for every seeded case.
+    const overflows = await Promise.all(SEEDED_SHORTCUTS.map(({ slug }) => overflowPx(shortcutButton(page, slug))));
+    expect(overflows).toEqual(SEEDED_SHORTCUTS.map(() => 0));
   });
 
   test("an emoji icon renders as itself, not through the icon font", async ({ page }) => {

@@ -16,9 +16,10 @@
  *  names, so a letters-only pattern rejects valid ones.
  *
  *  This says "shaped like a name", NOT "is a name the font carries": a typo
- *  such as `not_a_glyph` passes and still fails to resolve. Bounding what an
- *  unresolved name can paint is the renderer's job — see `SYMBOL_CONTAINMENT`
- *  in `plugin-vue/IconGlyph.ts`. */
+ *  such as `not_a_glyph` passes and still fails to resolve. Bounding what any
+ *  value can PAINT is the renderer's job — cutting to one grapheme (below)
+ *  bounds the character count, not the rendered width, so both branches are
+ *  additionally capped in `plugin-vue/IconGlyph.ts`. */
 const MATERIAL_SYMBOL_NAME_RE = /^[a-z0-9_]+$/;
 
 /** A resolved icon value: either a ligature name for the icon font, or a
