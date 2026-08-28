@@ -40,6 +40,11 @@ const COLOR_CLASS_RE = /^(?:bg|text|border|ring|fill|from|via|to|outline|divide|
 // One line, single spaces: every source here is prettier-formatted, and a
 // whitespace run before an optional `declare` is the same backtracking shape.
 const EXPORT_LINE_RE = /^export (?:declare )?(?:const|function|class|interface|type|enum) ([A-Za-z_$][\w$]*)/;
+// `export { palette, ENUM_ALERT as ALERT }` — a file can declare its palette
+// locally and export it in a list, which no per-line declaration pattern sees.
+// Whole-source rather than per-line because prettier wraps a long list.
+const EXPORT_LIST_RE = /export\s*\{([^}]*)\}/g;
+const NAME_RE = /^[A-Za-z_$][\w$]*$/;
 const SOURCE_RE = /@source\s+"([^"]+)"/g;
 // A CSS comment. Tailwind's parser ignores what is inside one, so a gate that
 // does not would read a commented-out `@source` as live — passing while the
@@ -56,12 +61,26 @@ export function colorClassesIn(source) {
   return new Set(tokens.filter((token) => COLOR_CLASS_RE.test(withoutVariants(token))));
 }
 
-/** Every symbol `source` exports by name. */
+/** The name an export-list entry makes available: the alias of `a as b`, the
+ *  symbol of `type Foo`, the entry itself otherwise. */
+const exportedAs = (entry) => entry.trim().split(/\s+/).pop() ?? "";
+
+/** Every symbol `source` exports by name, from declarations and from lists.
+ *
+ *  A braced RE-export (`export { helper } from "./b"`) counts too. It names a
+ *  symbol this file hands out, and over-reporting only ever asks a plugin for an
+ *  `@source` it may not need — the other direction is the bug this gate exists
+ *  for. */
 export function exportedNamesIn(source) {
-  return source
+  const declared = source
     .split("\n")
     .map((line) => EXPORT_LINE_RE.exec(line)?.[1])
     .filter((name) => name !== undefined);
+  const listed = [...source.matchAll(EXPORT_LIST_RE)]
+    .flatMap((match) => (match[1] ?? "").split(","))
+    .map(exportedAs)
+    .filter((name) => NAME_RE.test(name));
+  return [...new Set([...declared, ...listed])];
 }
 
 /** `css` with every comment blanked out. Spaces rather than removal, so the rest

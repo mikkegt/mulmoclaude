@@ -44,8 +44,20 @@ describe("exportedNamesIn", () => {
     assert.deepEqual(exportedNamesIn(source), ["EnumColorClasses", "ENUM_ALERT", "resolveEnumColor", "Palette"]);
   });
 
-  it("ignores a re-export and a local declaration — neither names a symbol THIS file owns", () => {
+  it("ignores a star re-export and a local declaration — neither names a symbol this file hands out", () => {
     assert.deepEqual(exportedNamesIn('export * from "./core/enumColors";\nconst PALETTE = [];'), []);
+  });
+
+  // A palette declared locally and exported in a list is invisible to a
+  // per-declaration pattern, so the gate would not know the plugin uses it
+  // (Codex review iter-2).
+  it("reads a named export list, including an alias and a type entry", () => {
+    assert.deepEqual(exportedNamesIn("const palette = 1;\nexport { palette };"), ["palette"]);
+    assert.deepEqual(exportedNamesIn("export {\n  ENUM_ALERT as ALERT,\n  type EnumColorClasses,\n};"), ["ALERT", "EnumColorClasses"]);
+  });
+
+  it("names a symbol once when it is both declared and listed", () => {
+    assert.deepEqual(exportedNamesIn("export const A = 1;\nexport { A };"), ["A"]);
   });
 });
 
