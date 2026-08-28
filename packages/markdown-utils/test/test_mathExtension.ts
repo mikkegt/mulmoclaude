@@ -40,18 +40,23 @@ describe("inline `$…$` — strict delimiter rules", () => {
     assert.doesNotMatch(render("Cost: $5-$10 range."), PENDING);
   });
 
-  it("leaves a thousands-grouped number alone", () => {
-    // Digits in threes is the signature of a price written twice, and it is the
-    // only numeric body rule 5 still rejects.
-    assert.doesNotMatch(render("total $1,000$ only"), PENDING);
-    assert.doesNotMatch(render("total $12,345,678$ only"), PENDING);
-    assert.doesNotMatch(render("total $1,000.50$ only"), PENDING);
+  it("leaves a number shaped like money alone, in any locale's convention", () => {
+    // Read from the SHAPE — digits in threes, or more than one separator —
+    // because a comma groups thousands in English and marks the decimal in most
+    // of Europe, and a dot does the opposite. Naming one of them fails half the
+    // world's authors either way.
+    for (const price of ["$1,000$", "$12,345,678$", "$1,000.50$", "$1.000$", "$1.000,50$", "$1 000,50$"]) {
+      assert.doesNotMatch(render(`total ${price} only`), PENDING, price);
+    }
   });
 
   it("typesets a decimal comma, which is how most of Europe writes 1.5", () => {
     // Rejecting every comma would leave those authors with literal dollars in
-    // their prose. Three digits after it is what says "grouping" instead.
+    // their prose — the same failure this rule was narrowed to fix for `$1.5$`.
     assert.match(render("etwa $1,5$ mal"), PENDING);
+    assert.match(render("about $3.14159$ times"), PENDING);
+    // A leading zero is a measurement: nobody writes a price as `0.100`.
+    assert.match(render("約 $0.100$ の精度"), PENDING);
   });
 
   it("typesets a plain number, which is what a maths article writes", () => {

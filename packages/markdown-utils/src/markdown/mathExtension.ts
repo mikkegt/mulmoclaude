@@ -33,28 +33,28 @@
 //   4. The character AFTER the closing `$` must not be an ASCII digit
 //      (`$5-$10`).
 //   5. The body must be non-empty, single-line, and must be something a
-//      formula could be ABOUT: a thousands-grouped number (`$1,000$`, a
-//      price written twice) or separators with no digits at all (`$+$`)
-//      are not.
+//      formula could be ABOUT: a number written the way money is
+//      (`$1,000$`, `$1.000,50$` — a price written twice) or separators
+//      with no digits at all (`$+$`) are not.
 //
 // Rule 5 used to reject EVERY digits-and-separators body, and that was
 // too wide: `1秒を $10000$ 個のステップに割る` and `答えは $1$` are the
 // ordinary way to write a number in a maths article, and both came out
 // as a literal `$10000$` / `$1$` sitting in the prose. The signature of
-// a price is THOUSANDS GROUPING — `$1,000$`, `$12,345,678$`, digits in
-// threes — and the two shapes that actually
+// a price is its SHAPE — digits in threes, or more than one separator —
+// and the two shapes that actually
 // appear in currency prose are already dead: `$100 と $200` by rule 3
 // (whitespace before the close) and `$5-$10` by rule 4 (a digit after
 // it). What stays admitted is a body like `$5$`, which a person quoting
 // a price does not write: they write `$5`, and it is the DOUBLED
 // delimiter that makes it maths.
 //
-// The grouping is matched rather than the comma alone, because a comma
-// is a DECIMAL POINT in most of Europe: `$1,5$` is one and a half, and
-// rejecting every comma left those authors with literal dollars in
-// their prose (codex, #2985). Three digits after the comma is what says
-// "grouping", and `$1,500$` is genuinely ambiguous — it is read as the
-// price, which is the reading that was already there.
+// The SHAPE is matched rather than a particular separator, because a
+// comma groups thousands in English and marks the decimal in most of
+// Europe, and a dot does the opposite (codex, #2985). `$1,5$` is one and
+// a half and typesets; `$1.000,50$` is a price and does not. `$1,500$`
+// is genuinely ambiguous and is read as the price — the reading rule 5
+// already had, which this narrowing keeps rather than reverses.
 //
 // Rules 2-5 are enforced in the tokenizer, where the whole match is in
 // hand. Rule 1 needs the character BEFORE the match, which a marked
@@ -82,27 +82,41 @@ interface MathToken extends Tokens.Generic {
 
 const ASCII_ALNUM = /[A-Za-z0-9]/;
 const ASCII_DIGIT = /\d/;
-const ONE_TO_THREE_DIGITS = /^\d{1,3}$/;
-const THREE_DIGITS = /^\d{3}$/;
 const DIGITS = /^\d+$/;
+/** Every character that separates the digit runs of a written number,
+ *  in any locale: `1,000.50`, `1.000,50`, `1 000,50`. Which one groups
+ *  and which one marks the decimal is exactly what cannot be known, so
+ *  none of them is read as one or the other. */
+const NUMBER_SEPARATORS = /[.,\s]/;
+const THOUSAND = 3;
 
-/** A number written with thousands grouping, optionally with decimals:
- *  `1,000`, `12,345,678`, `1,000.50`. A price written twice, not an
- *  equation — and NOT `1,5`, which is a decimal comma.
+/** A bare number written the way MONEY is written rather than the way a
+ *  quantity is — `1,000`, `1.000`, `1 000`, `1.000,50`, `12,345,678`.
  *
- *  Split into steps rather than written as one pattern because the
- *  pattern needs a bounded quantifier inside a repeat
- *  (`\d{1,3}(?:,\d{3})+`), which `security/detect-unsafe-regex` refuses
- *  on star-height alone. Each test here is anchored and linear. */
-function isThousandsGrouped(body: string): boolean {
-  const [whole, decimals, ...extra] = body.split(".");
-  if (extra.length > 0 || whole === undefined) return false;
-  if (decimals !== undefined && !DIGITS.test(decimals)) return false;
-  const groups = whole.split(",");
-  const lead = groups.shift();
-  if (groups.length === 0 || lead === undefined) return false;
-  if (!ONE_TO_THREE_DIGITS.test(lead)) return false;
-  return groups.every((group) => THREE_DIGITS.test(group));
+ *  Read from the SHAPE, not from which separator appeared: a comma
+ *  groups thousands in English and marks the decimal in most of Europe,
+ *  and a dot does the opposite, so a rule that names one of them fails
+ *  half the world's authors either way (codex, #2985).
+ *
+ *  Two separators or more is money — a quantity does not need them. One
+ *  separator followed by exactly three digits is ambiguous, `$1,500$` as
+ *  much as `$1.500$`, and is read as money: that is the reading rule 5
+ *  already had, and the one this file is narrowing rather than
+ *  reversing. Everything else — `10000`, `1`, `1,5`, `3.14159` — is a
+ *  number, and a number in a maths article is maths.
+ *
+ *  The exception is a leading zero: nobody writes a price as `0.100`,
+ *  so that one is a measurement and typesets. */
+function isMoneyShaped(body: string): boolean {
+  const runs = body.split(NUMBER_SEPARATORS);
+  // Anything that is not digits-and-separators is not a written number at
+  // all — `x=1` and `\pi` land here and are maths by this rule.
+  if (!runs.every((run) => DIGITS.test(run))) return false;
+  if (runs.length === 1) return false;
+  if (runs.length > 2) return true;
+  const [lead, tail] = runs;
+  if (lead === undefined || tail === undefined || lead.startsWith("0")) return false;
+  return tail.length === THOUSAND;
 }
 /** The same set with the digits removed: a body of punctuation has
  *  nothing to typeset. */
@@ -136,9 +150,9 @@ export function isPlausibleInlineMath(body: string, after: string): boolean {
   if (body.endsWith("\\")) return false;
   // Rule 4: `$5-$10`.
   if (ASCII_DIGIT.test(after)) return false;
-  // Rule 5. Thousands grouping is what says "price"; a plain number is
+  // Rule 5. The shape of money is what says "price"; a plain number is
   // just a number, and a number in a maths article is maths.
-  if (isThousandsGrouped(body)) return false;
+  if (isMoneyShaped(body)) return false;
   if (SEPARATORS_ONLY.test(body)) return false;
   return true;
 }
