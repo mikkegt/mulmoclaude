@@ -55,8 +55,11 @@ describe("inline `$…$` — strict delimiter rules", () => {
     // their prose — the same failure this rule was narrowed to fix for `$1.5$`.
     assert.match(render("etwa $1,5$ mal"), PENDING);
     assert.match(render("about $3.14159$ times"), PENDING);
-    // A leading zero is a measurement: nobody writes a price as `0.100`.
-    assert.match(render("約 $0.100$ の精度"), PENDING);
+    // But NOT `$0.100$`: a three-decimal sub-unit price is how fuel is priced,
+    // so a leading zero is no exception — three digits after the separator is
+    // the whole test, and `$0.1$` is the way to write the measurement.
+    assert.doesNotMatch(render("約 $0.100$ の精度"), PENDING);
+    assert.match(render("約 $0.1$ の精度"), PENDING);
   });
 
   it("typesets a plain number, which is what a maths article writes", () => {

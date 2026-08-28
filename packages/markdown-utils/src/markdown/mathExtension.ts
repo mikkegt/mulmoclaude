@@ -105,8 +105,10 @@ const THOUSAND = 3;
  *  reversing. Everything else — `10000`, `1`, `1,5`, `3.14159` — is a
  *  number, and a number in a maths article is maths.
  *
- *  The exception is a leading zero: nobody writes a price as `0.100`,
- *  so that one is a measurement and typesets. */
+ *  A leading zero is NOT an exception, though it looks like one: a
+ *  three-decimal sub-unit price is how fuel is priced (`$0.100` a litre),
+ *  so `$0.100$` is as ambiguous as `$1.500$` and is read the same way
+ *  (codex, #2985). Three digits after the separator is the whole test. */
 function isMoneyShaped(body: string): boolean {
   const runs = body.split(NUMBER_SEPARATORS);
   // Anything that is not digits-and-separators is not a written number at
@@ -114,8 +116,8 @@ function isMoneyShaped(body: string): boolean {
   if (!runs.every((run) => DIGITS.test(run))) return false;
   if (runs.length === 1) return false;
   if (runs.length > 2) return true;
-  const [lead, tail] = runs;
-  if (lead === undefined || tail === undefined || lead.startsWith("0")) return false;
+  const [, tail] = runs;
+  if (tail === undefined) return false;
   return tail.length === THOUSAND;
 }
 /** The same set with the digits removed: a body of punctuation has

@@ -30,7 +30,8 @@ no math pulls in nothing.
 "Shaped like money" is read from the SHAPE of the number rather than from which separator
 appeared — digits in threes, or more than one separator — so `$1,000$`, `$1.000,50$` and
 `$1 000,50$` all stay prose while `$1,5$` (a decimal comma, which is how most of Europe writes
-one and a half) typesets. A comma groups thousands in English and marks the decimal in most of
+one and a half) typesets. Three digits after a single separator is the whole test, leading zero
+or not — `$0.100$` is how fuel is priced, so it reads as money and `$0.1$` is the measurement. A comma groups thousands in English and marks the decimal in most of
 Europe, and a dot does the opposite, so a rule naming one of them fails half the world's
 authors either way.
 
