@@ -14,6 +14,7 @@
 // a PREFIX: `3002` truncated to `300` parses as a perfectly valid port that
 // nothing is listening on. A rename cannot be observed half-done, so the reader
 // sees either the old contents or the new ones and never a state in between.
+import type { AddressInfo } from "node:net";
 import { writeFileAtomic } from "../utils/files/index.js";
 import { WORKSPACE_PATHS } from "./paths.js";
 
@@ -27,4 +28,21 @@ export function formatServerPort(port: number): string {
  */
 export async function publishServerPort(port: number, portPath: string = WORKSPACE_PATHS.serverPort): Promise<void> {
   await writeFileAtomic(portPath, formatServerPort(port), { mode: 0o600 });
+}
+
+/**
+ * The port the listener actually got, which is not the one it was asked for
+ * whenever the request was `0`.
+ *
+ * `PORT=0` means "any free port": `app.listen(0)` binds one the OS picks, and
+ * the requested value stays `0` in the caller's variable. Publishing that `0`
+ * tells every reader nothing — it is not a port anything can address — so the
+ * dev proxy could not follow a backend started that way (Codex, #2981).
+ *
+ * `address()` is a string for a pipe or UNIX socket, which has no port; the
+ * requested value is the only answer left there.
+ */
+export function boundPortOf(address: AddressInfo | string | null, requested: number): number {
+  if (address !== null && typeof address === "object") return address.port;
+  return requested;
 }

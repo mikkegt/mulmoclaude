@@ -130,7 +130,7 @@ import { requireSameOrigin } from "./api/csrfGuard.js";
 import { bearerAuth } from "./api/auth/bearerAuth.js";
 import { isViewDataPath } from "./api/auth/viewToken.js";
 import { deleteTokenFile, generateAndWriteToken, getCurrentToken } from "./api/auth/token.js";
-import { publishServerPort } from "./workspace/serverPort.js";
+import { boundPortOf, publishServerPort } from "./workspace/serverPort.js";
 import { log } from "./system/logger/index.js";
 import { logBackgroundError } from "./utils/logBackgroundError.js";
 import { isNonEmptyString } from "./utils/types.js";
@@ -1445,18 +1445,22 @@ process.on("SIGTERM", () => {
     startMacosReminderAdapter();
 
     // Publish the actually-bound port — the requested PORT may have
-    // walked forward off a busy default. The hook script addresses
-    // us through this, and `yarn dev` points Vite's proxy at it, so
-    // it has concurrent readers and the write has to be atomic
-    // (see `publishServerPort`).
+    // walked forward off a busy default, and `PORT=0` never named one
+    // at all. Taken from the listener rather than the request for that
+    // second reason. The hook script addresses us through this, and
+    // `yarn dev` points Vite's proxy at it, so it has concurrent
+    // readers and the write has to be atomic (see `publishServerPort`).
+    // What the listener actually got — `port` is only the request, and under
+    // `PORT=0` it stays 0 while the OS picks the real one.
+    const boundPort = boundPortOf(httpServer.address(), port);
     try {
-      await publishServerPort(port);
+      await publishServerPort(boundPort);
     } catch (err) {
       log.warn("server", "failed to write .server-port; the LLM wiki-write hook and the dev proxy will be unable to reach the server", {
         error: String(err),
       });
     }
-    startRuntimeServices(httpServer, port, earlyPubsub).catch((err: unknown) => {
+    startRuntimeServices(httpServer, boundPort, earlyPubsub).catch((err: unknown) => {
       // Fail fast — a half-initialized runtime is worse than a
       // crashed one. Routes mounted at module load already accept
       // requests, so without this exit the app would respond with a

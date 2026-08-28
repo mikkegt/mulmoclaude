@@ -48,8 +48,14 @@ const PORT_RESOLUTION = resolveServerPort({
   // comments, an `export ` prefix or quoting, which is this bug one level down.
   envFileValues: parseEnvFile(path.join(process.cwd(), '.env')).parsed
 })
-for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
-  console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`)
+// Reported only when it still matters. `PORT=0` is a problem for config-time
+// resolution and no problem at all once the backend has published the port it
+// got, so warning about it after successfully following would just be noise.
+function reportUnusablePortValues(): void {
+  if (PROXY_TARGET.source === 'published') return
+  for (const { source, raw, reason } of PORT_RESOLUTION.problems) {
+    console.warn(`[vite] ignoring ${source}="${raw}" — ${describeRejection(reason)}`)
+  }
 }
 
 // What the backend ACTUALLY bound, which is not always what it was asked for:
@@ -82,6 +88,7 @@ const PROXY_TARGET = resolveProxyTarget(readPublishedPort(), PORT_RESOLUTION)
 if (PROXY_TARGET.source === 'published' && PROXY_TARGET.port !== PORT_RESOLUTION.port) {
   console.info(`[vite] proxying to :${PROXY_TARGET.port} — the port the backend actually bound (PORT resolved to :${PORT_RESOLUTION.port})`)
 }
+reportUnusablePortValues()
 const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET.port)
 
 // `PORT=0` (or a whitespace-only PORT, which coerces to 0) leaves the backend on an

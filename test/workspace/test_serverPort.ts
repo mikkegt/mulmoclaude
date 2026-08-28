@@ -15,7 +15,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { formatServerPort, publishServerPort } from "../../server/workspace/serverPort.js";
+import { createServer } from "node:net";
+import { boundPortOf, formatServerPort, publishServerPort } from "../../server/workspace/serverPort.js";
 import { parsePublishedPort } from "../../scripts/lib/devServerPort.js";
 
 let workspace: string;
@@ -78,5 +79,42 @@ describe("publishServerPort", () => {
     [...observed].forEach((value) => {
       assert.ok([OLD_PORT, NEW_PORT].includes(parsePublishedPort(value) ?? -1), `unusable observation ${JSON.stringify(value)}`);
     });
+  });
+});
+
+// `PORT=0` means "any free port". `app.listen(0)` binds one the OS picks while
+// the caller's variable stays `0`, so publishing the REQUEST would tell readers
+// nothing — `0` is not a port anything can address, and the dev proxy would have
+// no backend to follow (Codex, #2981).
+describe("boundPortOf", () => {
+  it("prefers the port the listener actually got", () => {
+    assert.equal(boundPortOf({ address: "127.0.0.1", family: "IPv4", port: 51234 }, 0), 51234);
+  });
+
+  it("still prefers it when a real port was requested and honoured", () => {
+    assert.equal(boundPortOf({ address: "127.0.0.1", family: "IPv4", port: 3001 }, 3001), 3001);
+  });
+
+  it("reports the walked-to port, not the one that was busy", () => {
+    assert.equal(boundPortOf({ address: "127.0.0.1", family: "IPv4", port: 3002 }, 3001), 3002);
+  });
+
+  it("falls back to the request for an address that has no port", () => {
+    // A pipe or UNIX socket: `address()` is a string there.
+    assert.equal(boundPortOf("/tmp/some.sock", 3001), 3001);
+    assert.equal(boundPortOf(null, 3001), 3001);
+  });
+
+  it("never publishes a value a reader would reject", async () => {
+    // The end-to-end shape of the PORT=0 case: bind ephemeral, publish, parse.
+    const server = createServer(() => {});
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      await publishServerPort(boundPortOf(server.address(), 0), portPath);
+      const parsed = parsePublishedPort(readFileSync(portPath, "utf-8"));
+      assert.ok(parsed !== null && parsed > 0, `PORT=0 must publish a usable port, got ${String(parsed)}`);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
