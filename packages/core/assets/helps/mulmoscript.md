@@ -197,7 +197,70 @@ Configure TTS voices per speaker.
 }
 ```
 
-Each speaker supports per-language voice overrides via a `lang` map.
+| Field | Required | Description |
+|---|---|---|
+| `voiceId` | Yes | Provider voice name. Gemini voices are names like `"Kore"`, `"Schedar"`, `"Aoede"` — `config/helps/storyteller.md` lists them by tone |
+| `provider` | No | **Falls back to `openai`, not Gemini** — always write `"provider": "gemini"` |
+| `model` | No | TTS model. Omitted → the provider's default (Gemini: `gemini-2.5-flash-preview-tts`) |
+| `isDefault` | No | Beats with no `speaker` field use this speaker |
+| `displayName` | No | Per-language label for the speaker |
+| `speechOptions` | No | How the line is delivered — see below |
+| `lang` | No | Per-language speaker **replacement** — see below |
+
+Nothing here is validated against the provider: `model` is a free-form string,
+and a missing `provider` / `model` is never an error — it silently resolves to a
+default. A wrong choice is only audible, so set these deliberately.
+
+### Choosing a model
+
+Gemini TTS accepts two models:
+
+| Model | Cost | Use when |
+|---|---|---|
+| `gemini-2.5-flash-preview-tts` (default) | 1× | Everything, by default — leave `model` out |
+| `gemini-2.5-pro-preview-tts` | ~2× the token price | The user asks for higher-quality or more expressive narration |
+
+**Decide before the first render.** Each beat's audio file is cached under a hash
+of `text` + `voiceId` + `provider` + `model` + `speechOptions`, so adding or
+changing any of them gives every beat a new cache key and **re-records the whole
+script** — a full round of billed TTS calls. Leave `model` out to track the
+provider default; add it only when you mean to pin a different model.
+
+### `speechOptions`
+
+`beats[].speechOptions` merges over the speaker's for that one beat, so a single
+line can be delivered differently without touching the speaker.
+
+| Option | Honored by | Notes |
+|---|---|---|
+| `instruction` | `gemini`, `openai` | Direction for delivery, sent as DIRECTOR'S NOTES ahead of the text. Under `google` it is **dropped unless `model` is set** |
+| `speed` | `openai`, `google`, `elevenlabs` | **Silently ignored by `gemini`** — ask for the pace in `instruction` instead |
+
+(`stability` / `similarity_boost` belong to `elevenlabs` and `decoration` to
+`kotodama`; neither provider is configured in this app.)
+
+### `lang` — a replacement, not an override
+
+A `lang` entry **replaces the whole speaker** for that language. Nothing is
+inherited from the parent, so `provider`, `model`, and `speechOptions` have to be
+repeated inside it — an entry holding only `voiceId` resolves to the `openai`
+provider, which then fails on a missing `OPENAI_API_KEY` (or rejects the Gemini
+voice name), even though the script names Gemini everywhere.
+
+```json
+"Presenter": {
+  "provider": "gemini",
+  "voiceId": "Kore",
+  "speechOptions": { "instruction": "Warm and unhurried." },
+  "lang": {
+    "ja": {
+      "provider": "gemini",
+      "voiceId": "Kore",
+      "speechOptions": { "instruction": "Warm and unhurried." }
+    }
+  }
+}
+```
 
 ## audioParams
 
