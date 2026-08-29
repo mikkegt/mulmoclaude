@@ -21,7 +21,7 @@
     "sandbox-entrypoint.sh"
   ],
   "dependencies": {
-    "@google/genai": "^2.15.0",
+    "@google/genai": "^2.19.0",
     "@gui-chat-plugin/browse": "^2.0.0",
     "@gui-chat-plugin/camera": "^2.0.0",
     "@gui-chat-plugin/google-map": "^2.0.0",
@@ -61,10 +61,10 @@
     "ignore": "^7.0.6",
     "js-yaml": "^5.4.1",
     "jszip": "^3.10.1",
-    "mammoth": "^1.12.1",
+    "mammoth": "^1.12.2",
     "marked": "^18.0.11",
     "mulmocast": "^2.12.0",
-    "node-html-parser": "^9.0.1",
+    "node-html-parser": "^9.0.2",
     "puppeteer": "^25.9.0",
     "sharp": "^0.35.4",
     "socket.io": "^4.8.3",
@@ -74,7 +74,7 @@
     "which": "^6",
     "ws": "^8.21.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zod": "^4.4.3"
+    "zod": "^4.5.2"
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"
