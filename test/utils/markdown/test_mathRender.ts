@@ -18,7 +18,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { Marked } from "marked";
-import { mathExtension } from "@mulmoclaude/markdown-utils/markdown/mathExtension";
+import { mathExtension, mathPlaceholder } from "@mulmoclaude/markdown-utils/markdown/mathExtension";
 
 const SOURCE = [
   "牛丼は $100 と $200 です。US$5 too.",
@@ -225,5 +225,80 @@ describe("renderMathNodes — host hardening pass", () => {
     assert.equal(host.querySelectorAll(".math-error").length, 0);
     assert.ok(host.querySelectorAll("path").length > 0);
     host.remove();
+  });
+});
+
+// The paths where a formula does NOT come out. The suites above pin what the
+// pipeline keeps out (`javascript:`) and what it draws; these pin what it does
+// when drawing fails — which is the half a host author meets first, because the
+// hardener they write is what breaks it.
+describe("renderMathNodes — when nothing can be drawn", () => {
+  const inlineHost = (tex: string): HTMLElement => {
+    const host = document.createElement("div");
+    host.innerHTML = mathPlaceholder(tex, { display: false, block: false });
+    document.body.appendChild(host);
+    return host;
+  };
+
+  it("replaces the formula with an error box carrying the source when a hardener drops the <svg>", async () => {
+    // One of the two things `MathHardener`'s doc names as load-bearing. It is
+    // the first trap a host falls into writing its own policy, so the contract
+    // belongs in a test rather than only in the docstring.
+    const host = inlineHost("x^2");
+    await renderMathNodes(host, undefined, () => "<span>a policy that drops the svg</span>");
+
+    const box = host.querySelector(".math-error");
+    assert.ok(box, "expected an error box");
+    assert.equal(host.querySelectorAll("svg").length, 0);
+    // The author has to be able to see WHICH formula broke.
+    assert.match(box.textContent ?? "", /x\^2/);
+    host.remove();
+  });
+
+  it("replaces the placeholder itself, so no pending flag is left behind", async () => {
+    // A leftover flag makes the next `renderMathNodes` typeset the same formula
+    // again.
+    const host = inlineHost("y^2");
+    await renderMathNodes(host, undefined, () => "<span>no svg</span>");
+    assert.equal(host.querySelectorAll("[data-math-pending]").length, 0);
+
+    const afterFirst = host.innerHTML;
+    await renderMathNodes(host, undefined, () => "<span>no svg</span>");
+    assert.equal(host.innerHTML, afterFirst, "a second pass does nothing");
+    host.remove();
+  });
+
+  it("does NOT produce an error box for broken TeX — MathJax draws its own", async () => {
+    // Counter-intuitive enough to pin. MathJax does not throw; it returns an
+    // SVG of the error message, so `renderOne`'s catch never runs. The suites
+    // above only ever assert `.math-error` is EMPTY, so this reading was
+    // written down nowhere. If MathJax ever starts throwing, this goes red
+    // first.
+    const host = inlineHost("\\frac{");
+    await renderMathNodes(host);
+
+    assert.equal(host.querySelectorAll(".math-error").length, 0);
+    assert.equal(host.querySelectorAll("svg").length, 1);
+    assert.match(host.textContent ?? "", /Missing close brace/);
+    host.remove();
+  });
+
+  it("treats an undefined macro the same way", async () => {
+    // `AllPackages` pulls in `noundefined`, so MathJax draws the unknown
+    // control sequence as its own name rather than throwing. Assert the name
+    // reached the output: counting one <svg> alone would also pass if MathJax
+    // silently drew nothing (coderabbit, #2996).
+    const host = inlineHost("\\nosuchmacro{x}");
+    await renderMathNodes(host);
+    assert.equal(host.querySelectorAll(".math-error").length, 0);
+    assert.equal(host.querySelectorAll("svg").length, 1);
+    assert.match(host.textContent ?? "", /nosuchmacro/);
+    host.remove();
+  });
+
+  it("returns without doing anything when there is no root", async () => {
+    // Callers pass a Vue ref, which is null before mount.
+    await assert.doesNotReject(renderMathNodes(null));
+    await assert.doesNotReject(renderMathNodes(undefined));
   });
 });
