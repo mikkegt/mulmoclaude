@@ -28,12 +28,23 @@ a line break or be shaped like money. So `牛丼は $100 と $200 です。`, `U
 no math pulls in nothing.
 
 "Shaped like money" is read from the SHAPE of the number rather than from which separator
-appeared — digits in threes, or more than one separator — so `$1,000$`, `$1.000,50$` and
-`$1 000,50$` all stay prose while `$1,5$` (a decimal comma, which is how most of Europe writes
-one and a half) typesets. Three digits after a single separator is the whole test, leading zero
-or not — `$0.100$` is how fuel is priced, so it reads as money and `$0.1$` is the measurement. A comma groups thousands in English and marks the decimal in most of
-Europe, and a dot does the opposite, so a rule naming one of them fails half the world's
-authors either way.
+appeared, because a comma groups thousands in English and marks the decimal in most of Europe
+while a dot does the opposite — a rule naming one of them fails half the world's authors either
+way. **Two separators or more** is a formatted amount and stays prose: `$1.000,50$`,
+`$12,345,678$`, `$1 000,50$`. **One separator is a number and typesets**, whatever follows it:
+`$1,5$`, `$3.14159$`, `$3.141$`, `$1,000$`.
+
+That last part changed in 2.2.0. Reading "three digits after one separator" as money took every
+three-decimal constant a maths article writes — π `3.141`, √2 `1.414`, e `2.718`, φ `1.618`,
+γ `0.577`, Avogadro `6.022`, g `9.807` — and left it as literal `$…$` in the prose. What it
+bought was `$1,500$`, and that turns out to be a shape currency prose never reaches: every
+realistic way of writing a price dies at the earlier rules — `$1,000 と $2,000` and
+`合計 $1,000から$500` by the no-whitespace-before-the-close rule, `$1,000-$2,000` by the
+no-digit-after-it rule, `US$1,000` by the no-alphanumeric-before-the-open rule, and
+`価格は $1,000 です` by having no closing `$` at all. What is left is `$1,000$`, both delimiters
+written out — the same shape this module already read as maths for `$5$`, since a person quoting
+a price writes `$1,000` and it is the DOUBLED delimiter that makes it a formula. One reading now
+covers both.
 
 2.0.0 rejected every digits-and-separators body instead, and that was too wide: `1秒を
 $10000$ 個のステップに割る` and `答えは $1$` are how a maths article writes a number, and both
@@ -60,7 +71,7 @@ the baseline" where it now means "as well as". Both consumers here pass two argu
 unaffected, but the rename is a source break for anyone who read the published type. **2.1.0**
 follows with the narrowed inline-`$` rule described above.
 
-Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.1.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
+Ships `@mulmoclaude/accounting-plugin@3.0.0`, `@mulmoclaude/chart-plugin@3.0.0`, `@mulmoclaude/collection-plugin@4.4.0`, `@mulmoclaude/common@1.2.0`, `@mulmoclaude/core@4.4.2`, `@mulmoclaude/form-plugin@2.0.0`, `@mulmoclaude/google-plugin@3.0.0`, `@mulmoclaude/html-plugin@4.0.0`, `@mulmoclaude/markdown-plugin@4.1.0`, `@mulmoclaude/markdown-utils@2.2.0`, `@mulmoclaude/mulmoscript-plugin@4.4.0`, `@mulmoclaude/spotify-plugin@2.0.0`, `@mulmoclaude/x-plugin@1.0.3`.
 
 ---
 
