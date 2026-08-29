@@ -225,6 +225,41 @@ shipped registry repo's README. Common rejections:
 - `name` reuses the reserved value `official`.
 - `name` doesn't match `[A-Za-z0-9][A-Za-z0-9_-]{0,31}`.
 
+## A collection's icon shows up as letters, or smears over its neighbours
+
+### Symptoms
+
+- A collection / feed / pinned shortcut draws its icon NAME as text
+  (`podcasts`, or a fragment like `_A__C`) instead of a glyph.
+- The text spills out of its square and overlaps the buttons next to it
+  in the launcher bar.
+
+### Cause + fix
+
+`schema.icon` was set to something the Material Symbols font has no
+ligature for. The font matches icons by LIGATURE, so an unknown value
+is simply laid out as ordinary text.
+
+Valid names are lowercase letters, digits and underscores only —
+`podcasts`, `rss_feed`, `menu_book`, `3d_rotation`. Capitals, spaces
+and hyphens never match (`Podcasts` and `menu-book` are the usual
+typos). Look the name up in the Material Symbols set before writing it;
+do not invent one.
+
+An **emoji is a valid alternative** and is often the better choice: it
+is in colour and stands out among the monochrome glyphs, which is the
+point when several collections would otherwise share a look-alike icon
+(`podcasts` / `rss_feed` / `menu_book`). Set `"icon": "🎙️"` the same way you
+would set a name. Only the first GRAPHEME is drawn — one emoji, whatever
+number of code points it is built from (a variation selector, a skin tone, a
+ZWJ family) — so write exactly one glyph and nothing after it.
+
+If the smearing persists after the value is corrected, the surface
+drawing it is bypassing `IconGlyph`
+(`@mulmoclaude/core/plugin-vue`) — every schema-authored icon must go
+through it rather than into a bare
+`<span class="material-symbols-outlined">`.
+
 ## A hand-placed custom role never appears in the list
 
 ### Symptoms

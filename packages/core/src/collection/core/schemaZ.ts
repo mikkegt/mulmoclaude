@@ -740,6 +740,11 @@ export const StorageZ = z.discriminatedUnion("type", [
  *  this parses to, and nothing narrower. */
 const CollectionObjectZ = z.object({
   title: z.string().min(1),
+  // A Material Symbols ligature name, or a single emoji. Deliberately not
+  // pattern-constrained: every renderer goes through `resolveIconGlyph`
+  // (core/iconGlyph.ts), which decides which of the two a value is and cuts
+  // anything else down to one grapheme — so a bad value degrades to a plain
+  // character instead of being rejected at write time.
   icon: z.string().min(1),
   // Exactly one of `dataPath` (native JSON-file records), `dataSource`
   // (external read-only data file), or `storage` (alternative writable
