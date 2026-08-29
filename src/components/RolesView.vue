@@ -146,7 +146,7 @@
             :class="selectedId === role.id ? 'rounded-b-none' : ''"
             @click="selectRole(role)"
           >
-            <span class="text-gray-500"><IconGlyph :icon="role.icon" font-class="material-icons" size-class="text-2xl" /></span>
+            <span class="text-gray-500"><IconGlyph :icon="role.icon" font-class="material-icons" size-class="!text-2xl" /></span>
             <div class="flex-1 min-w-0">
               <div class="font-medium text-sm text-gray-800">
                 {{ role.name }}

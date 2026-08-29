@@ -5,7 +5,7 @@
       <span>{{ t("pluginManageRoles.previewCount", customRoles.length, { named: { count: customRoles.length } }) }}</span>
     </div>
     <div v-for="role in customRoles" :key="role.id" class="text-xs text-gray-600 flex items-center gap-1">
-      <IconGlyph :icon="role.icon" font-class="material-icons" size-class="text-xs" />
+      <IconGlyph :icon="role.icon" font-class="material-icons" size-class="!text-xs" />
       {{ role.name }}
     </div>
   </div>
