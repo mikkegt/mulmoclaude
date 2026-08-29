@@ -4,11 +4,23 @@
 
 import type { Role } from "../../config/roles";
 
-// Material Icon names use lowercase letters and underscores only.
-// Custom roles may have stored an emoji or other freeform value in
-// the icon field; fall back to a generic icon in that case so we
-// don't render the literal text inside a Material Icons span.
-const MATERIAL_ICON_RE = /^[a-z_]+$/;
+// Material Icon names are lowercase letters, DIGITS and underscores.
+//
+// Verified against the shipped list rather than assumed: all 2122 names in
+// `material-icons/index.d.ts` use exactly the charset `[0-9_a-z]`, and this
+// pattern rejects none of them. A letters-only pattern rejected 151 real icons
+// — every numeric one (`123`, `360`, `10k`, `3d_rotation`, `18_up_rating`) —
+// and the role silently fell back to the robot glyph instead.
+//
+// `collection/core/iconGlyph.ts` asks the same question of Material SYMBOLS
+// and is deliberately a separate copy: it is a different icon set with its own
+// name list, so each is pinned by a sweep over ITS OWN shipped names. Sharing
+// one pattern would only hide the day the two sets diverge.
+//
+// Custom roles may have stored an emoji or other freeform value in the icon
+// field; fall back to a generic icon in that case so we don't render the
+// literal text inside a Material Icons span.
+const MATERIAL_ICON_RE = /^[a-z0-9_]+$/;
 
 // `smart_toy` (robot glyph) is used for both fallback cases —
 // "role not found" and "role icon isn't a valid Material Icon name".
