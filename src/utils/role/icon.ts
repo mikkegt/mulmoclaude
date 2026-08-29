@@ -42,7 +42,17 @@ const FALLBACK_ICON = "smart_toy";
  *  the same failure took out a collection header in #2605.
  *
  *  A resolved ligature is EXACTLY 1em wide, so capping the box at 1em never
- *  touches a real icon and contains every miss. */
+ *  touches a real icon and contains every miss. `em` rather than a fixed size
+ *  because the callers range from `text-sm` to `text-5xl`.
+ *
+ *  Every span rendering THIS function's result carries it: `App.vue` (the
+ *  empty-session hero), `RoleSelector.vue` (trigger + each option) and
+ *  `SessionRoleIcon.vue`. The roles MANAGEMENT screen
+ *  (`plugins/manageRoles/View.vue`, `Preview.vue`) deliberately does NOT — it
+ *  renders the RAW `role.icon` so you can see what you typed, emoji included,
+ *  and an emoji is 1.25em, so this cap would crop it. Bounding that screen
+ *  needs the classify-then-render treatment `collection/core/iconGlyph.ts`
+ *  uses, not this. */
 export const ROLE_ICON_CONTAINMENT = "inline-block w-[1em] overflow-hidden";
 
 export function roleIcon(roles: Role[], roleId: string): string {
