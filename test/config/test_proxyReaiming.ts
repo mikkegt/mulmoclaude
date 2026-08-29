@@ -13,6 +13,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 
 interface Backend {
@@ -46,6 +47,54 @@ async function whoAnswered(vitePort: number): Promise<string> {
   const body: unknown = await res.json();
   assert.ok(typeof body === "object" && body !== null && "who" in body, "expected the backend's own answer");
   return String((body as { who: unknown }).who);
+}
+
+interface WsBackend {
+  port: number;
+  close: () => Promise<void>;
+}
+
+/** A WebSocket backend that greets each client with its own label. */
+async function startWsBackend(label: string): Promise<WsBackend> {
+  const server = http.createServer();
+  const wss = new WebSocketServer({ server });
+  wss.on("connection", (socket) => socket.send(label));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object", "expected a bound TCP address");
+  return {
+    port: address.port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        wss.close(() => server.close(() => resolve()));
+      }),
+  };
+}
+
+function vitePort(server: ViteDevServer): number {
+  const address = server.httpServer?.address();
+  assert.ok(address !== null && address !== undefined && typeof address === "object", "expected Vite to be listening");
+  return address.port;
+}
+
+/** Open one upgrade through Vite and read which backend answered. */
+function whoGreeted(port: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error("no greeting through the proxied upgrade"));
+    }, 5000);
+    socket.on("message", (data: Buffer) => {
+      clearTimeout(timer);
+      socket.close();
+      resolve(data.toString());
+    });
+    socket.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
 }
 
 describe("a running Vite proxy can be re-aimed at another backend", () => {
@@ -103,5 +152,59 @@ describe("a running Vite proxy can be re-aimed at another backend", () => {
     // them per request, this is the assertion that says so — and the whole
     // runtime-following design would need rethinking rather than a patch.
     assert.equal(await whoAnswered(address.port), "second", "rewriting proxy.options.target must take effect on the next request");
+  });
+});
+
+// The `/ws` entry is re-aimed the same way, but it does NOT travel the same code
+// path: an upgrade is handled by `proxy.ws()` and `wsPasses`, reached from the
+// http server's `upgrade` event rather than the request middleware. Codex asked
+// for this on review, and rightly — the HTTP case passing says nothing about it.
+describe("a running Vite proxy re-aims WebSocket upgrades too", () => {
+  let first: WsBackend;
+  let second: WsBackend;
+  let vite: ViteDevServer;
+  const captured: Reaimable[] = [];
+
+  before(async () => {
+    first = await startWsBackend("first");
+    second = await startWsBackend("second");
+    vite = await createViteServer({
+      configFile: false,
+      root: process.cwd(),
+      logLevel: "silent",
+      server: {
+        host: "127.0.0.1",
+        port: 0,
+        proxy: {
+          "/ws": {
+            target: `ws://127.0.0.1:${first.port}`,
+            ws: true,
+            configure: (proxy: unknown) => captured.push(proxy as Reaimable),
+          },
+        },
+      },
+    });
+    await vite.listen();
+  });
+
+  after(async () => {
+    await vite?.close();
+    await first?.close();
+    await second?.close();
+  });
+
+  it("reaches the backend it was configured with", async () => {
+    assert.equal(await whoGreeted(vitePort(vite)), "first");
+  });
+
+  it("reaches the OTHER backend after its target is rewritten", async () => {
+    assert.equal(captured.length, 1, "the ws proxy instance must be reachable through `configure`");
+    captured.forEach((proxy) => {
+      proxy.options.target = `ws://127.0.0.1:${second.port}`;
+    });
+
+    // Existing connections stay where they were — only new upgrades follow,
+    // which is why the pubsub client reconnecting is what makes this useful.
+    assert.equal(await whoGreeted(vitePort(vite)), "second", "rewriting proxy.options.target must retarget the next upgrade");
   });
 });
