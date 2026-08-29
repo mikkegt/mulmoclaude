@@ -26,6 +26,10 @@ const SEEDED_SHORTCUTS = [
   // bound what this paints.
   { kind: "collection", slug: "zwj", title: "Family Emoji", icon: "👨‍👩‍👧‍👦" },
   { kind: "collection", slug: "feeds", title: "Feeds", icon: "rss_feed" },
+  // Accent colour (#2987): the same generic glyph, told apart by its chip.
+  { kind: "collection", slug: "tinted", title: "Tinted", icon: "rss_feed", color: "violet" },
+  // A name outside the palette must degrade to the unstyled default, not throw.
+  { kind: "collection", slug: "badcolor", title: "Bad Colour", icon: "rss_feed", color: "puce" },
 ];
 
 /** Seed the shortcut list. Registered AFTER `mockAllApis` — Playwright checks
@@ -118,6 +122,48 @@ test.describe("launcher shortcut icon glyph", () => {
         await expect(button.locator("span").first()).toHaveAttribute("aria-hidden", "true");
       }),
     );
+  });
+});
+
+test.describe("launcher shortcut accent colour", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllApis(page);
+    await seedShortcuts(page);
+    await page.goto("/chat");
+    await expect(shortcutButton(page, "podcasts")).toBeVisible();
+  });
+
+  // The palette's literals live ONLY in @mulmoclaude/core, and a Tailwind build
+  // that does not scan core emits nothing for them — silently, since the class
+  // stays on the element either way (#2989). So this reads the COMPUTED colour
+  // rather than the class list: it is the only form that fails when the CSS is
+  // missing.
+  test("a shortcut with an accent colour paints a tinted background", async ({ page }) => {
+    const tinted = await shortcutButton(page, "tinted").evaluate((node) => getComputedStyle(node).backgroundColor);
+    const plain = await shortcutButton(page, "feeds").evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(tinted).not.toBe(plain);
+    // Not merely "different" — the class has to have produced real CSS.
+    // Tailwind v4 emits oklch(), so match any colour function rather than rgb().
+    expect(tinted).toMatch(/^(?:rgba?|oklch|color|lab|lch)\(/);
+    expect(tinted).not.toBe("rgba(0, 0, 0, 0)");
+    expect(tinted).not.toBe("transparent");
+  });
+
+  test("a colour outside the palette falls back to the plain treatment", async ({ page }) => {
+    const bad = await shortcutButton(page, "badcolor").evaluate((node) => getComputedStyle(node).backgroundColor);
+    const plain = await shortcutButton(page, "feeds").evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(bad).toBe(plain);
+  });
+
+  test("shortcuts without a colour are unchanged", async ({ page }) => {
+    const plain = await shortcutButton(page, "podcasts").evaluate((node) => getComputedStyle(node).backgroundColor);
+    // white — the pre-accent default
+    expect(plain).toBe("rgb(255, 255, 255)");
+  });
+
+  test("the accent never changes the 32px footprint", async ({ page }) => {
+    const widths = await Promise.all(SEEDED_SHORTCUTS.map(async ({ slug }) => (await shortcutButton(page, slug).boundingBox())?.width));
+    expect(widths).toEqual(SEEDED_SHORTCUTS.map(() => 32));
   });
 });
 

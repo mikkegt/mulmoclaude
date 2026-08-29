@@ -62,7 +62,7 @@
             </span>
           </div>
 
-          <component :is="pinToggle" kind="feed" :slug="feed.slug" :title="feed.title" :icon="feed.icon || 'dynamic_feed'" />
+          <component :is="pinToggle" kind="feed" :slug="feed.slug" :title="feed.title" :icon="feed.icon || 'dynamic_feed'" :color="feed.color" />
 
           <button
             type="button"
@@ -153,7 +153,12 @@ async function load(): Promise<void> {
   // prune dead slugs, refresh stale titles/icons, self-heal the file.
   void reconcileShortcuts(
     "feed",
-    feeds.value.map((feed) => ({ slug: feed.slug, title: feed.title, icon: feed.icon || "dynamic_feed" })),
+    feeds.value.map((feed) => ({
+      slug: feed.slug,
+      title: feed.title,
+      icon: feed.icon || "dynamic_feed",
+      ...(feed.color === undefined ? {} : { color: feed.color }),
+    })),
   );
 }
 

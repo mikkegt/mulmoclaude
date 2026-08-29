@@ -262,6 +262,15 @@ export interface CollectionSummary {
   slug: string;
   title: string;
   icon: string;
+  /** Optional accent colour name (see `ACCENT_COLORS`), drawn as a pale chip
+   *  behind the launcher glyph. Absent when the schema names none.
+   *
+   *  Declared NARROW (no `| undefined`), like its `appId` / `readonly`
+   *  siblings: the remote-host handlers pass these shapes through `Jsonify`,
+   *  which drops `undefined` from a member union, so a widened optional stops
+   *  being assignable there. Producers therefore ADD the key conditionally
+   *  rather than assigning `undefined` to it. */
+  color?: string;
   source: CollectionSource;
   /** Present (true) when the collection is backed by an external
    *  `dataSource` and therefore read-only in every UI/tool write path.

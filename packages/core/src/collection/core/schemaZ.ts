@@ -19,6 +19,7 @@
 import { isRecord, isUnknownArray } from "@mulmoclaude/common";
 import { z } from "zod";
 import { isSafeSlug } from "./ids";
+import { ACCENT_COLORS } from "./accentColor";
 import { isSafeActionTemplatePath, isSafeCustomViewI18nPath, isSafeCustomViewPath } from "./templatePath";
 import { INGEST_KINDS, AGENT_INGEST_KIND, FEED_SCHEDULES } from "./schema";
 import {
@@ -740,6 +741,11 @@ export const StorageZ = z.discriminatedUnion("type", [
  *  this parses to, and nothing narrower. */
 const CollectionObjectZ = z.object({
   title: z.string().min(1),
+  // Optional accent colour, drawn as a pale chip behind the launcher glyph so
+  // collections sharing a generic icon stay distinguishable (#2987). A name
+  // outside the palette is not rejected here — `accentChipClasses` returns null
+  // and the surface falls back to unstyled, the same fail-soft `icon` gets.
+  color: z.enum(ACCENT_COLORS).optional(),
   // A Material Symbols ligature name, or a single emoji. Deliberately not
   // pattern-constrained: every renderer goes through `resolveIconGlyph`
   // (core/iconGlyph.ts), which decides which of the two a value is and cuts

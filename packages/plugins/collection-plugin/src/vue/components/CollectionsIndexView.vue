@@ -198,7 +198,14 @@
                 </span>
               </div>
 
-              <component :is="pinToggle" kind="collection" :slug="collection.slug" :title="collection.title" :icon="collection.icon" />
+              <component
+                :is="pinToggle"
+                kind="collection"
+                :slug="collection.slug"
+                :title="collection.title"
+                :icon="collection.icon"
+                :color="collection.color"
+              />
 
               <!-- Contribute is meaningless for a dataSource collection: its
                  records are a machine-local file no registry bundle can carry
@@ -303,7 +310,15 @@ async function loadCollections(): Promise<void> {
   // titles/icons, self-heal the file. Feed shortcuts are left to FeedsView.
   void reconcileShortcuts(
     "collection",
-    collections.value.map((collection) => ({ slug: collection.slug, title: collection.title, icon: collection.icon })),
+    collections.value.map((collection) => ({
+      slug: collection.slug,
+      title: collection.title,
+      icon: collection.icon,
+      // Spread rather than assigned: `color: undefined` is an explicit
+      // undefined, which the shortcut shape does not accept (see the note on
+      // `CollectionSummary.color`).
+      ...(collection.color === undefined ? {} : { color: collection.color }),
+    })),
   );
 }
 

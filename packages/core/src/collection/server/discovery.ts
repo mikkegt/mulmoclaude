@@ -313,6 +313,7 @@ export function toSummary(collection: LoadedCollection): CollectionSummary {
     slug: collection.slug,
     title: collection.schema.title,
     icon: collection.schema.icon,
+    ...(collection.schema.color !== undefined ? { color: collection.schema.color } : {}),
     source: collection.source,
     ...(collection.schema.dataSource !== undefined ? { readonly: true as const } : {}),
     ...(collection.appId !== undefined ? { appId: collection.appId } : {}),

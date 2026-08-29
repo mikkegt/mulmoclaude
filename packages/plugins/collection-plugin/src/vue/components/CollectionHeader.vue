@@ -51,6 +51,7 @@
       :slug="collection.slug"
       :title="collection.title"
       :icon="collection.icon"
+      :color="collection.color"
     />
 
     <button
