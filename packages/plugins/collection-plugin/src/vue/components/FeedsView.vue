@@ -117,6 +117,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from "vue";
 import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
+import { toShortcutInfo } from "@mulmoclaude/core/collection";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import type { FeedSummary } from "@mulmoclaude/core/collection";
@@ -153,12 +154,7 @@ async function load(): Promise<void> {
   // prune dead slugs, refresh stale titles/icons, self-heal the file.
   void reconcileShortcuts(
     "feed",
-    feeds.value.map((feed) => ({
-      slug: feed.slug,
-      title: feed.title,
-      icon: feed.icon || "dynamic_feed",
-      ...(feed.color === undefined ? {} : { color: feed.color }),
-    })),
+    feeds.value.map((feed) => toShortcutInfo(feed, "dynamic_feed")),
   );
 }
 

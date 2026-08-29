@@ -238,6 +238,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
+import { toShortcutInfo } from "@mulmoclaude/core/collection";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import DiscoverPanel from "./DiscoverPanel.vue";
@@ -310,15 +311,7 @@ async function loadCollections(): Promise<void> {
   // titles/icons, self-heal the file. Feed shortcuts are left to FeedsView.
   void reconcileShortcuts(
     "collection",
-    collections.value.map((collection) => ({
-      slug: collection.slug,
-      title: collection.title,
-      icon: collection.icon,
-      // Spread rather than assigned: `color: undefined` is an explicit
-      // undefined, which the shortcut shape does not accept (see the note on
-      // `CollectionSummary.color`).
-      ...(collection.color === undefined ? {} : { color: collection.color }),
-    })),
+    collections.value.map((collection) => toShortcutInfo(collection, "dataset")),
   );
 }
 

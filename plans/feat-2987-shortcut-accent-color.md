@@ -4,7 +4,7 @@ Issue: #2987 / refs #2960 / 前提: #2986（PR #2988, merged）
 
 ## 問題
 
-#2960 の実際の困りごとは「`podcasts` / `rss_feed` / `menu_book` のような**同系統の汎用グリフ**が
+`#2960` の実際の困りごとは「`podcasts` / `rss_feed` / `menu_book` のような**同系統の汎用グリフ**が
 並ぶと見分けられない」こと。#2986 で「グリフの語彙を増やす」軸（絵文字）は解決したが、
 **汎用グリフのまま使いたい場合**の識別性はまだ無い。
 
@@ -29,10 +29,14 @@ Issue: #2987 / refs #2960 / 前提: #2986（PR #2988, merged）
 
 ```ts
 // packages/core/src/collection/core/accentColor.ts
-export const ACCENT_COLORS = ["violet", "sky", "teal", "emerald", "lime", "cyan", "indigo", "fuchsia"] as const;
+export const ACCENT_COLORS = ["violet", "indigo", "sky", "teal", "emerald", "lime", "fuchsia"] as const;
 export type AccentColor = (typeof ACCENT_COLORS)[number];
 export function accentChipClasses(color: string | undefined): string | null;
 ```
+
+**7 色にした経緯（計画時は 8 色だった）**: 候補 8 色を**同一グリフ**で実ブラウザに並べたところ、
+`cyan` が `sky` と `teal` のちょうど中間に来て、1 つのピルに同系統の青緑が 3 つ並びうることが
+分かったので `cyan` を落とした。見分けられない色は識別の役に立たないため、色数ではなく分離を優先する。
 
 `enumColors` と同じく**暖色帯（red / orange / amber）は意図的に除外**する。あちらでは通知の
 severity（`ENUM_ALERT` 赤 / `ENUM_NUDGE` 橙）に予約されており、ランチャーで暖色を使うと

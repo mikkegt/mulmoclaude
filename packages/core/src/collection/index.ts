@@ -34,6 +34,7 @@ export * from "./core/chatSeed";
 export * from "./core/dynamicIcon";
 export * from "./core/iconGlyph";
 export * from "./core/accentColor";
+export * from "./core/shortcutInfo";
 export * from "./core/derivedFormula";
 export * from "./core/deriveAll";
 export * from "./core/sortItems";

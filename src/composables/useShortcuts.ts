@@ -14,7 +14,7 @@ import { createMutationQueue } from "../utils/mutationQueue";
 import { sameShortcut, type Shortcut, type ShortcutKind } from "../types/shortcuts";
 import type { CollectionShortcutInfo } from "@mulmoclaude/core/collection";
 import { moveShortcutByIdentity, type MoveDirection } from "./shortcutReorder";
-import { hasShortcutDrifted, refreshShortcut } from "./shortcutRefresh";
+import { reconcileShortcuts } from "./shortcutRefresh";
 
 const shortcuts = ref<Shortcut[]>([]);
 const loadError = ref<string | null>(null);
@@ -130,21 +130,7 @@ function reconcile(kind: ShortcutKind, live: CollectionShortcutInfo[]): Promise<
   return enqueue(async () => {
     await load();
     if (!loaded.value) return; // never overwrite an unread list
-    const liveBySlug = new Map(live.map((entry) => [entry.slug, entry]));
-    let drifted = false;
-    const next = shortcuts.value.flatMap((entry) => {
-      if (entry.kind !== kind) return [entry];
-      const fresh = liveBySlug.get(entry.slug);
-      if (!fresh) {
-        drifted = true; // dead slug — prune
-        return [];
-      }
-      if (hasShortcutDrifted(entry, fresh)) {
-        drifted = true; // stale label / colour — refresh
-        return [refreshShortcut(entry, fresh)];
-      }
-      return [entry];
-    });
+    const { next, drifted } = reconcileShortcuts(shortcuts.value, kind, live);
     if (drifted) await persist(next, shortcuts.value);
   });
 }

@@ -10,7 +10,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { hasShortcutDrifted, refreshShortcut, type ShortcutRefreshSource } from "../../src/composables/shortcutRefresh";
+import {
+  hasShortcutDrifted,
+  reconcileShortcuts,
+  refreshShortcut,
+  type ShortcutRefreshRow,
+  type ShortcutRefreshSource,
+} from "../../src/composables/shortcutRefresh";
 import type { Shortcut } from "../../src/types/shortcuts";
 
 const pinned: Shortcut = { kind: "collection", slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "violet" };
@@ -80,5 +86,80 @@ describe("hasShortcutDrifted", () => {
     assert.equal(hasShortcutDrifted(pinned, { title: "Other", icon: "podcasts", color: "violet" }), true);
     assert.equal(hasShortcutDrifted(pinned, { title: "Podcasts", icon: "inbox", color: "violet" }), true);
     assert.equal(hasShortcutDrifted(pinned, { title: "Podcasts", icon: "podcasts", color: "teal" }), true);
+  });
+});
+
+describe("reconcileShortcuts", () => {
+  const pins: Shortcut[] = [
+    { kind: "collection", slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "violet" },
+    { kind: "collection", slug: "notes", title: "Notes", icon: "menu_book" },
+    { kind: "feed", slug: "news", title: "News", icon: "rss_feed", color: "sky" },
+  ];
+  const rowsFor = (...rows: ShortcutRefreshRow[]): ShortcutRefreshRow[] => rows;
+
+  it("reports no drift when the index agrees, and returns the same entries", () => {
+    const result = reconcileShortcuts(
+      pins,
+      "collection",
+      rowsFor({ slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "violet" }, { slug: "notes", title: "Notes", icon: "menu_book" }),
+    );
+    assert.equal(result.drifted, false);
+    assert.deepEqual(result.next, pins);
+  });
+
+  it("leaves other kinds untouched — an index only speaks for its own", () => {
+    // The feed pin must survive a collection reconcile that does not list it.
+    const result = reconcileShortcuts(
+      pins,
+      "collection",
+      rowsFor({ slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "violet" }, { slug: "notes", title: "Notes", icon: "menu_book" }),
+    );
+    assert.ok(result.next.some((entry) => entry.kind === "feed" && entry.slug === "news"));
+  });
+
+  it("prunes a slug the index no longer lists", () => {
+    const result = reconcileShortcuts(pins, "collection", rowsFor({ slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "violet" }));
+    assert.equal(result.drifted, true);
+    assert.deepEqual(
+      result.next.map((entry) => entry.slug),
+      ["podcasts", "news"],
+    );
+  });
+
+  it("clears a colour the index dropped, and then settles", () => {
+    const rows = rowsFor({ slug: "podcasts", title: "Podcasts", icon: "podcasts" }, { slug: "notes", title: "Notes", icon: "menu_book" });
+    const once = reconcileShortcuts(pins, "collection", rows);
+    assert.equal(once.drifted, true);
+    assert.equal(once.next[0] && "color" in once.next[0], false);
+    // Running it again on the result must be a no-op — this is the property
+    // that stops the file being rewritten on every index visit.
+    assert.equal(reconcileShortcuts(once.next, "collection", rows).drifted, false);
+  });
+
+  it("is idempotent for every shape of change", () => {
+    const cases: ShortcutRefreshRow[][] = [
+      rowsFor({ slug: "podcasts", title: "Renamed", icon: "podcasts", color: "violet" }, { slug: "notes", title: "Notes", icon: "menu_book" }),
+      rowsFor({ slug: "podcasts", title: "Podcasts", icon: "inbox", color: "violet" }, { slug: "notes", title: "Notes", icon: "menu_book" }),
+      rowsFor({ slug: "podcasts", title: "Podcasts", icon: "podcasts", color: "lime" }, { slug: "notes", title: "Notes", icon: "menu_book", color: "teal" }),
+      rowsFor({ slug: "notes", title: "Notes", icon: "menu_book" }),
+      rowsFor(),
+    ];
+    cases.forEach((rows, index) => {
+      const once = reconcileShortcuts(pins, "collection", rows);
+      assert.equal(reconcileShortcuts(once.next, "collection", rows).drifted, false, `case ${index}`);
+    });
+  });
+
+  it("prunes every collection pin when the index comes back empty", () => {
+    const result = reconcileShortcuts(pins, "collection", []);
+    assert.equal(result.drifted, true);
+    assert.deepEqual(
+      result.next.map((entry) => entry.slug),
+      ["news"],
+    );
+  });
+
+  it("reports no drift for an empty pin list", () => {
+    assert.deepEqual(reconcileShortcuts([], "collection", rowsFor({ slug: "x", title: "X", icon: "inbox" })), { next: [], drifted: false });
   });
 });
