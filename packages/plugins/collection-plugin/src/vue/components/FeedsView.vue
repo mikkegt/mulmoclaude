@@ -51,7 +51,7 @@
           @keydown.space.self.prevent="open(feed.slug)"
         >
           <div class="h-12 w-12 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100/50">
-            <span class="material-symbols-outlined text-2xl">{{ feed.icon || "dynamic_feed" }}</span>
+            <IconGlyph :icon="feed.icon" fallback="dynamic_feed" size-class="text-2xl" />
           </div>
 
           <div class="flex-1 min-w-0">
@@ -116,6 +116,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from "vue";
+import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import type { FeedSummary } from "@mulmoclaude/core/collection";

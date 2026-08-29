@@ -176,7 +176,7 @@
                     : 'bg-violet-50 text-violet-600 group-hover:bg-violet-100/80 border border-violet-100/50'
                 "
               >
-                <span class="material-symbols-outlined text-2xl">{{ collection.icon }}</span>
+                <IconGlyph :icon="collection.icon" size-class="text-2xl" />
               </div>
 
               <div class="flex-1 min-w-0">
@@ -230,6 +230,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import DiscoverPanel from "./DiscoverPanel.vue";

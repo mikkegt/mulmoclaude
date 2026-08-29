@@ -135,6 +135,12 @@ jobs:
     # link still READS fine, so only a reader who clicks finds out. It took an
     # outside contributor to notice. Cheap to check, so check it every PR.
     - run: yarn run check:doc-links
+    # #2989: a plugin's Tailwind build scans only its own package, so classes
+    # declared in core (the shared enum palette) dropped out of the plugin's
+    # dist/style.css while the host app kept rendering them — invisible unless
+    # you load the plugin AS a package. The fix is one `@source` line; this is
+    # what makes the next shared palette fail loudly instead of silently.
+    - run: yarn run check:plugin-css
     - run: yarn run build
     # Bundle integrity: `yarn build` regenerates committed esbuild
     # artifacts (`server/workspace/wiki-history/hook/snapshot.mjs`
