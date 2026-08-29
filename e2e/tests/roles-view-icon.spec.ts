@@ -68,11 +68,24 @@ test.describe("roles management — icon rendering", () => {
     // The reason this screen could not take a flat 1em clip.
     const icon = iconOf(page, "emoji");
     await expect(icon).toHaveText("🤖");
-    // Emoji run wider than the em box; anything at or below 1em would mean the
-    // glyph had been clipped.
-    const ratio = await widthInEm(icon);
-    expect(ratio).toBeGreaterThan(0.9);
-    expect(ratio).toBeLessThanOrEqual(1.3);
+    expect(await widthInEm(icon)).toBeLessThanOrEqual(1.3);
+
+    // WIDTH alone cannot answer "was it cropped": measured, this emoji's
+    // natural advance at 24px is exactly 24px, so a hard 1em clip and the
+    // correct rendering are both 1.0em and indistinguishable. What separates
+    // them is WHICH containment the span got — the literal-glyph path caps with
+    // `max-width: 1.25em` and leaves width free, while the icon-font path fixes
+    // `width: 1em`. Asserting the cap is what actually detects over-clipping.
+    const box = await icon.evaluate((node) => {
+      const style = getComputedStyle(node);
+      const fontSize = Number.parseFloat(style.fontSize);
+      return {
+        maxWidthEm: style.maxWidth === "none" ? null : Number((Number.parseFloat(style.maxWidth) / fontSize).toFixed(2)),
+        fontSize,
+      };
+    });
+    expect(box.maxWidthEm).not.toBeNull();
+    expect(box.maxWidthEm).toBeGreaterThan(1);
   });
 
   test("a real icon name still resolves through the Material Icons font", async ({ page }) => {
