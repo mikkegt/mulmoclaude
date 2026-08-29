@@ -12,7 +12,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -32,6 +32,24 @@ interface Fixture {
   workspace: string;
   portFile: string;
   close: () => Promise<void>;
+}
+
+/**
+ * Publish the port the way the real backend does — tmp file, then rename.
+ *
+ * `server/workspace/serverPort.ts` writes `.server-port` atomically precisely
+ * because the waiter reads it while it is being written: a plain write opens
+ * with `O_TRUNC`, so a reader landing between the truncate and the write sees an
+ * EMPTY file and one landing mid-write sees a PREFIX — `3002` cut to `300`
+ * parses as a perfectly valid port nothing is listening on. The CLI reads the
+ * file once after the mtime moves, so a single torn read loses the whole wait.
+ * A fake backend writing non-atomically would model a hazard the real one cannot
+ * produce (CodeRabbit).
+ */
+function publishPort(fixture: Fixture): void {
+  const tmp = `${fixture.portFile}.tmp`;
+  writeFileSync(tmp, `${fixture.boundPort}\n`);
+  renameSync(tmp, fixture.portFile);
 }
 
 async function startFakeBackend(): Promise<Fixture> {
@@ -88,7 +106,7 @@ function runCli(fixture: Fixture, opts: { port: number; args?: string[] } = { po
  * exist to prove.
  */
 async function runCliWhilePublishing(fixture: Fixture, opts?: { port: number; args?: string[] }): Promise<{ code: number | null; out: string }> {
-  const publishing = setInterval(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_INTERVAL_MS);
+  const publishing = setInterval(() => publishPort(fixture), PUBLISH_INTERVAL_MS);
   try {
     return await runCli(fixture, opts);
   } finally {
@@ -124,7 +142,7 @@ describe("wait-for-backend CLI — follows the port the backend published", () =
     // Present before the wait begins and never rewritten, so it cannot speak for
     // this startup. Falling back to `PORT` is right: at least that is what Vite
     // will fall back to as well, so the two still agree.
-    writeFileSync(fixture.portFile, `${fixture.boundPort}\n`);
+    publishPort(fixture);
 
     const { code, out } = await runCli(fixture);
 
@@ -144,7 +162,7 @@ describe("wait-for-backend CLI — follows the port the backend published", () =
     // One timed write is safe here where it was not above: the marker makes the
     // file attributable, so a publish landing on EITHER side of the snapshot is
     // credited to this run. Nothing rides on which side wins.
-    const publish = setTimeout(() => writeFileSync(fixture.portFile, `${fixture.boundPort}\n`), PUBLISH_DELAY_MS);
+    const publish = setTimeout(() => publishPort(fixture), PUBLISH_DELAY_MS);
     const { code, out } = await runCli(fixture);
     clearTimeout(publish);
 

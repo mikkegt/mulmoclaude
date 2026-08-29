@@ -22,6 +22,18 @@ ubuntu の CI でスイート先頭（最も cold な spawn）が落ちた。
 - `attributable=false` のケースはスナップショット後の write でしか成功しないので、
   「publish を学んでから待つ」という証明対象の順序は保たれる
 
+## publish は本番と同じく atomic に
+
+CodeRabbit 指摘。素の `writeFileSync` は `O_TRUNC` で開くので、truncate と write の
+あいだに読んだ側は**空ファイル**、write 中に読んだ側は**前方一致の断片**を見る
+（`3002` が `300` になり、何も listen していないポートとして正常にパースされる）。
+CLI は mtime が動いた後に 1 回だけ読むので、torn read 1 回で wait 全体が落ちる。
+
+実サーバ (`server/workspace/serverPort.ts`) は `writeFileAtomic` で tmp→rename しており、
+まさにこの危険を潰すためだと冒頭コメントに書いてある。フェイクバックエンドが非 atomic に
+書くのは**本番が起こしえない危険をモデル化している**ことになるので、フィクスチャの publish も
+tmp→rename に揃える（`publishPort`）。テスト 3 の 1 発 publish も同じ経路に通す。
+
 ## 適用範囲
 
 | テスト | 変更 | 理由 |
