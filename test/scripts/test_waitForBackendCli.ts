@@ -150,7 +150,7 @@ describe("wait-for-backend CLI — follows the port the backend published", () =
     assert.equal(code, 0, out);
     assert.doesNotMatch(out, /backend ready on/);
     assert.match(out, /never published a port/);
-    assert.match(out, /restart `yarn dev`|set PORT/);
+    assert.match(out, /switch as soon as the backend publishes|set PORT/);
   });
 
   it("never refuses to start Vite — following removes the mismatch it used to guard", async () => {
