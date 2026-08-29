@@ -85,7 +85,10 @@ test.describe("roles management — icon rendering", () => {
       };
     });
     expect(box.maxWidthEm).not.toBeNull();
-    expect(box.maxWidthEm).toBeGreaterThan(1);
+    // The CONTRACT value, not merely "more than 1em": every emoji measured
+    // 1.25em, so `GLYPH_CONTAINMENT` caps there. A regression to 1.01em would
+    // satisfy "greater than 1" and still crop a wider emoji.
+    expect(box.maxWidthEm).toBeGreaterThanOrEqual(1.25);
   });
 
   test("a real icon name still resolves through the Material Icons font", async ({ page }) => {
