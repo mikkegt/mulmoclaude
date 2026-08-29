@@ -228,11 +228,11 @@ describe("renderMathNodes — host hardening pass", () => {
   });
 });
 
-// The paths where a formula does NOT come out. The suite above pins what
-// the pipeline keeps out (`javascript:`) and what it draws; these pin
-// what it does when drawing fails — which is the half a host author
-// meets first, because the hardener they write is what breaks it.
-describe("renderMathNodes — 描けなかったとき", () => {
+// The paths where a formula does NOT come out. The suites above pin what the
+// pipeline keeps out (`javascript:`) and what it draws; these pin what it does
+// when drawing fails — which is the half a host author meets first, because the
+// hardener they write is what breaks it.
+describe("renderMathNodes — when nothing can be drawn", () => {
   const inlineHost = (tex: string): HTMLElement => {
     const host = document.createElement("div");
     host.innerHTML = mathPlaceholder(tex, { display: false, block: false });
@@ -240,39 +240,40 @@ describe("renderMathNodes — 描けなかったとき", () => {
     return host;
   };
 
-  it("hardener が <svg> を落としたら、ソース付きの error box に置き換える", async () => {
-    // `MathHardener` の doc が「消すと壊れる」と名指ししている2つのうちの
-    // 一方。ホストが自分のポリシーを書くとき最初に踏む落とし穴なので、
-    // 契約が doc だけでなくテストにもある状態にする。
+  it("replaces the formula with an error box carrying the source when a hardener drops the <svg>", async () => {
+    // One of the two things `MathHardener`'s doc names as load-bearing. It is
+    // the first trap a host falls into writing its own policy, so the contract
+    // belongs in a test rather than only in the docstring.
     const host = inlineHost("x^2");
-    await renderMathNodes(host, undefined, () => "<span>svg を落とすポリシー</span>");
+    await renderMathNodes(host, undefined, () => "<span>a policy that drops the svg</span>");
 
     const box = host.querySelector(".math-error");
-    assert.ok(box, "error box に置き換わること");
+    assert.ok(box, "expected an error box");
     assert.equal(host.querySelectorAll("svg").length, 0);
-    // どの式が壊れたか著者に見えること。
+    // The author has to be able to see WHICH formula broke.
     assert.match(box.textContent ?? "", /x\^2/);
     host.remove();
   });
 
-  it("error box は placeholder ごと置き換える — pending が残らない", async () => {
-    // 残ると次の `renderMathNodes` が同じ式をもう一度組もうとする。
+  it("replaces the placeholder itself, so no pending flag is left behind", async () => {
+    // A leftover flag makes the next `renderMathNodes` typeset the same formula
+    // again.
     const host = inlineHost("y^2");
     await renderMathNodes(host, undefined, () => "<span>no svg</span>");
     assert.equal(host.querySelectorAll("[data-math-pending]").length, 0);
 
     const afterFirst = host.innerHTML;
     await renderMathNodes(host, undefined, () => "<span>no svg</span>");
-    assert.equal(host.innerHTML, afterFirst, "2回目は何もしない");
+    assert.equal(host.innerHTML, afterFirst, "a second pass does nothing");
     host.remove();
   });
 
-  it("壊れた TeX は error box ではなく MathJax 自身のエラー字形になる", async () => {
-    // 直感に反するので固定しておく。MathJax は例外を投げず、エラーを
-    // 描いた SVG を返すため `renderOne` の catch には入らない。既存の
-    // テストは `.math-error` が 0 件であることしか見ておらず、この
-    // 読み方はどこにも書かれていなかった。MathJax が将来投げるように
-    // なれば、ここが最初に赤くなる。
+  it("does NOT produce an error box for broken TeX — MathJax draws its own", async () => {
+    // Counter-intuitive enough to pin. MathJax does not throw; it returns an
+    // SVG of the error message, so `renderOne`'s catch never runs. The suites
+    // above only ever assert `.math-error` is EMPTY, so this reading was
+    // written down nowhere. If MathJax ever starts throwing, this goes red
+    // first.
     const host = inlineHost("\\frac{");
     await renderMathNodes(host);
 
@@ -282,7 +283,7 @@ describe("renderMathNodes — 描けなかったとき", () => {
     host.remove();
   });
 
-  it("未定義マクロも同じ扱い", async () => {
+  it("treats an undefined macro the same way", async () => {
     const host = inlineHost("\\nosuchmacro{x}");
     await renderMathNodes(host);
     assert.equal(host.querySelectorAll(".math-error").length, 0);
@@ -290,8 +291,8 @@ describe("renderMathNodes — 描けなかったとき", () => {
     host.remove();
   });
 
-  it("root が無いときは何もせず返る", async () => {
-    // 呼び出し側は Vue の ref を渡すので、マウント前は null になりうる。
+  it("returns without doing anything when there is no root", async () => {
+    // Callers pass a Vue ref, which is null before mount.
     await assert.doesNotReject(renderMathNodes(null));
     await assert.doesNotReject(renderMathNodes(undefined));
   });
