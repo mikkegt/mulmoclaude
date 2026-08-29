@@ -186,7 +186,7 @@
               <pre class="text-sm text-gray-700 whitespace-pre-wrap">{{ JSON.stringify(selectedResult, null, 2) }}</pre>
             </div>
             <div v-else class="flex flex-col items-center justify-center h-full px-6 text-center">
-              <span class="material-icons text-5xl text-gray-400 mb-2" aria-hidden="true">{{ sessionRoleIcon }}</span>
+              <span class="material-icons text-5xl text-gray-400 mb-2" :class="ROLE_ICON_CONTAINMENT" aria-hidden="true">{{ sessionRoleIcon }}</span>
               <p class="text-lg font-medium text-gray-700 mb-4">{{ sessionRoleName }}</p>
               <div v-if="sessionRoleQueries.length > 0" class="flex flex-wrap gap-2 justify-center max-w-xl">
                 <button
@@ -388,7 +388,7 @@ import { pushErrorMessage, beginUserTurn, updateResult, applyToolResultToSession
 import { parseCollectionSlashSeed, makeSyntheticCollectionResult, hasRealCollectionResult } from "./utils/collections/presentSeed";
 import { mergeBufferedIntoDraft } from "./utils/chat/buffer";
 import { createInFlightShare } from "./utils/inFlightShare";
-import { roleName, roleIcon } from "./utils/role/icon";
+import { ROLE_ICON_CONTAINMENT, roleName, roleIcon } from "./utils/role/icon";
 import { usePendingCalls } from "./composables/usePendingCalls";
 import { loadCspExtra } from "./composables/useCspExtra";
 import { cspViolations, dismissCspViolations, installCspViolationListener } from "./composables/useCspViolations";
