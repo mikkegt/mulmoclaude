@@ -66,7 +66,20 @@ jobs:
   # is covered daily and on every main push instead.
   lint_test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # 30, not 20: the macOS cells sit far closer to the cap than ubuntu.
+    # Over 60 runs the macOS p90 was 18.0-19.3 min against a 20 min cap
+    # (ubuntu p90 13.9-15.5), and 5 of those runs had a macOS cell killed
+    # at exactly 20 min while every ubuntu sibling passed. Runner speed
+    # also drifts day to day - on 2026-08-28 the macOS median was 17.7.
+    # A lockfile-touching PR is the worst case: setup-node's yarn cache
+    # and the packages/dist cache below both key on the lockfile with no
+    # restore-key, so a dep bump pays a cold install AND a cold
+    # build:packages (#3005: 42s -> 2m26s and 1m11s -> 2m25s). The
+    # puppeteer cache has a restore-key and stays warm, so it is not part
+    # of this. 30 matches the Windows sibling job. A cap is a runaway
+    # guard, not a perf budget - raising it costs nothing on a healthy
+    # run. (#3007)
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
