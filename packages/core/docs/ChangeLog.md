@@ -2,6 +2,22 @@
 
 Newest first. Each entry corresponds to a tagged release. Written in English.
 
+## @mulmoclaude/core@4.5.0 — 2026-08-30
+
+Three new modules ship here, and the collection plugin and the host both depend on them — this release has to land before either.
+
+**Icons are classified before they are drawn** (#2986, PR #2988; #3003, PR #3006). A `schema.icon` that is not a Material Symbols name — an emoji, most often — used to be handed to the icon font anyway, which rendered it at the font's own metrics and let it overlap the button beside it. `src/collection/core/iconGlyph.ts` decides what a given string *is* before anything renders it, and `src/plugin-vue/IconGlyph.ts` is the component every surface now goes through. Emoji are supported deliberately rather than by accident, the icon-font path carries a11y attributes, a blank fallback no longer produces an empty glyph, and the containment that keeps an oversized glyph inside its box no longer depends on the build configuration.
+
+**Collections and feeds carry an accent colour** (#2987, PR #2998). `src/collection/core/accentColor.ts` holds the parsing and the palette; `schema.ts` / `schemaZ.ts` / `uiTypes.ts` carry the field. Two review findings shaped the final form: the colour was not persisted, and an invalid colour took the whole collection down with it rather than falling back.
+
+**`src/collection/core/shortcutInfo.ts`** is the one place an index row becomes the `{slug, title, icon, color}` that a pinned shortcut reconciles against. The collections index and the feeds index each did this inline, and the subtle half was identical in both: `color` has to be *added* only when there is one and never assigned as `undefined`, because the remote-host handlers pass these shapes through `Jsonify`, which drops `undefined` from a member union. Two copies of that is how they drift.
+
+**Atomic writes retry longer when they can afford to** (#2972 follow-up). `files/atomic.ts` now keeps two rename-retry ladders instead of one. The async ladder grew from ~430 ms to ~4 s because waiting is nearly free there — the call yields — and the old budget was not enough on a loaded Windows CI runner, where the notifier's `active.json` write lost the rename and threw while the contention it was retrying through had long since cleared. The sync ladder stays at ~430 ms on purpose: `sleepSync` parks the whole thread, so a long budget there does not delay one write, it freezes the process. Both budgets are exported so a test can assert what they cost rather than hard-coding a second copy of the numbers.
+
+Help content also moved, and it ships as code through `files: ["dist", "assets"]`: `error-recovery.md` gained a substantial new section, `mulmoscript.md` grew by roughly the same amount, and `bug-report-faq.md`, `business.md`, `gemini.md`, `presentation-deck.md` and `storyteller.md` were all touched. `collection/server/manageTool.ts`, `paths.ts` and `discovery.ts` carry the server-side wiring for the above.
+
+📦 **npm**: [`@mulmoclaude/core@4.5.0`](https://www.npmjs.com/package/@mulmoclaude/core/v/4.5.0)
+
 ## @mulmoclaude/core@4.4.2 — 2026-08-26
 
 Documents the search-box relay for custom collection views (#2959, PR #2963) in the help file the agent reads when it authors one.
