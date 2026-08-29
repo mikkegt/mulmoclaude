@@ -13,7 +13,7 @@
     </button>
 
     <div v-if="collection" class="h-9 w-9 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-      <span class="material-symbols-outlined text-xl">{{ collection.icon }}</span>
+      <IconGlyph :icon="collection.icon" size-class="text-xl" />
     </div>
 
     <div class="flex-1 min-w-0">
@@ -129,7 +129,7 @@
           :data-testid="`collections-related-item-${related.slug}`"
           @click="gotoRelated(related.slug)"
         >
-          <span class="material-symbols-outlined text-base">{{ related.icon }}</span>
+          <IconGlyph :icon="related.icon" size-class="text-base" />
           <span class="flex-1 text-left">{{ related.title }}</span>
           <span
             class="material-icons text-sm text-slate-400"
@@ -156,7 +156,7 @@
       <!-- A running `kind:"agent"` worker replaces the icon with a spinner
            until the completion ping's refetch clears its run key. -->
       <span v-if="isActionRunning(action.id)" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-      <span v-else-if="action.icon" class="material-symbols-outlined text-sm">{{ action.icon }}</span>
+      <IconGlyph v-else-if="action.icon" :icon="action.icon" size-class="text-sm" />
       <span>{{ action.label }}</span>
     </button>
 
@@ -211,6 +211,7 @@
 // component owns, exactly as before. The parent drives the per-slug reset
 // through the exposed `resetForSlugChange`, keeping its original timing.
 import { computed, toRef } from "vue";
+import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import { useRelatedMenu } from "../composables/useRelatedMenu";

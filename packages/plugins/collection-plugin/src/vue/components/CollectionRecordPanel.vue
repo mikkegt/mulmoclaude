@@ -52,7 +52,7 @@
           <!-- A running `kind:"agent"` worker replaces the icon with a spinner
                until the completion ping's refetch clears its run key. -->
           <span v-if="runningActionIds.includes(action.id)" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-          <span v-else-if="action.icon" class="material-symbols-outlined text-sm">{{ action.icon }}</span>
+          <IconGlyph v-else-if="action.icon" :icon="action.icon" size-class="text-sm" />
           <span>{{ action.label }}</span>
         </button>
 
@@ -542,6 +542,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
 import { useCollectionI18n } from "../lang";
 import CollectionBacklinksView from "./CollectionBacklinksView.vue";
 import CollectionEmbedView from "./CollectionEmbedView.vue";
