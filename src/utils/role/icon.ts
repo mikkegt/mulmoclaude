@@ -29,6 +29,22 @@ const MATERIAL_ICON_RE = /^[a-z0-9_]+$/;
 // make an unknown role look identical to a pinned collection (#1684).
 const FALLBACK_ICON = "smart_toy";
 
+/** Classes that bound what a role icon can paint, for the spans that render
+ *  `roleIcon`'s result.
+ *
+ *  The pattern above says "shaped like a name", NOT "is a name the font
+ *  carries" — and it never could without shipping all 2122 of them to the
+ *  browser and keeping that copy in step with the font. So an unresolvable
+ *  value still reaches the icon font, where it is laid out as ordinary TEXT:
+ *  measured, `not_a_glyph` draws 176px against a real glyph's 16px, which
+ *  pushes the row apart. That is not new — `not_a_glyph`, `aaaa` and the far
+ *  likelier `schoool` all passed the previous letters-only pattern too, and
+ *  the same failure took out a collection header in #2605.
+ *
+ *  A resolved ligature is EXACTLY 1em wide, so capping the box at 1em never
+ *  touches a real icon and contains every miss. */
+export const ROLE_ICON_CONTAINMENT = "inline-block w-[1em] overflow-hidden";
+
 export function roleIcon(roles: Role[], roleId: string): string {
   const icon = roles.find((role) => role.id === roleId)?.icon ?? FALLBACK_ICON;
   return MATERIAL_ICON_RE.test(icon) ? icon : FALLBACK_ICON;
