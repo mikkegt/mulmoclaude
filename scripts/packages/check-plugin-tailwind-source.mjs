@@ -188,40 +188,46 @@ function pluginsWithCss(coreExports) {
     });
 }
 
-/** The `@source` line a gap needs, written relative to the plugin's CSS. */
-function fixLine(gap) {
-  return `@source "${path.relative(path.dirname(gap.cssPath), gap.coreFile)}";`;
+/** Path as it reads in a message: relative to the repository. */
+const rel = (file) => path.relative(REPO_ROOT, file);
+
+/** Report core files this rule cannot follow at all. */
+function reportUndetectable(files) {
+  console.error(`[plugin-css] FAIL — ${files.length} core file(s) declare Tailwind classes behind a default export:`);
+  for (const core of files) console.error(`  ${rel(core.file)}`);
+  console.error("");
+  console.error("  A default import arrives under whatever name the plugin picks, so this");
+  console.error("  gate cannot tell who renders those classes. Export the palette by name.");
 }
 
-function main() {
-  const coreFiles = coreFilesWithClasses();
-  const coreExports = coreFiles.flatMap((core) => core.exports);
-  const plugins = pluginsWithCss(coreExports);
-  const gaps = findGaps(coreFiles, plugins);
-  const undetectable = undetectableCoreFiles(coreFiles);
-  const rel = (file) => path.relative(REPO_ROOT, file);
-  if (undetectable.length > 0) {
-    console.error(`[plugin-css] FAIL — ${undetectable.length} core file(s) declare Tailwind classes behind a default export:`);
-    for (const core of undetectable) console.error(`  ${rel(core.file)}`);
-    console.error("");
-    console.error("  A default import arrives under whatever name the plugin picks, so this");
-    console.error("  gate cannot tell who renders those classes. Export the palette by name.");
-    return 1;
-  }
-  if (gaps.length === 0) {
-    console.log(`[plugin-css] OK — ${plugins.length} plugin CSS entries, ${coreFiles.length} core file(s) declaring classes, no gaps.`);
-    return 0;
-  }
+/** Report plugins rendering classes their own build never scans. */
+function reportGaps(gaps) {
   console.error(`[plugin-css] FAIL — ${gaps.length} plugin(s) render core classes their build never scans:`);
   for (const gap of gaps) {
     console.error(`  ${gap.plugin} uses ${gap.symbols.join(", ")} from ${rel(gap.coreFile)} (${gap.classes} classes)`);
-    console.error(`    add to ${rel(gap.cssPath)}:  ${fixLine(gap)}`);
+    console.error(`    add to ${rel(gap.cssPath)}:  @source "${path.relative(path.dirname(gap.cssPath), gap.coreFile)}";`);
   }
   console.error("");
   console.error("  Without it those classes are missing from the package's dist/style.css.");
   console.error("  The host app renders them anyway, so the gap only shows up for whoever");
   console.error("  loads the plugin as a package — which is why it needs a gate, not an eye.");
-  return 1;
+}
+
+function main() {
+  const coreFiles = coreFilesWithClasses();
+  const plugins = pluginsWithCss(coreFiles.flatMap((core) => core.exports));
+  const undetectable = undetectableCoreFiles(coreFiles);
+  const gaps = findGaps(coreFiles, plugins);
+  if (undetectable.length > 0) {
+    reportUndetectable(undetectable);
+    return 1;
+  }
+  if (gaps.length > 0) {
+    reportGaps(gaps);
+    return 1;
+  }
+  console.log(`[plugin-css] OK — ${plugins.length} plugin CSS entries, ${coreFiles.length} core file(s) declaring classes, no gaps.`);
+  return 0;
 }
 
 // Only run the CLI when invoked directly, so tests can import the helpers.
