@@ -7,7 +7,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { createDevWatchIgnore } from './scripts/lib/devWatchIgnore'
 import { resolveDevWorkspacePath } from './scripts/lib/devWorkspace'
-import { assertProxyablePort, describeRejection, resolveProxyTarget, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
+import { createProxyTargetFollower } from './scripts/lib/proxyTargetFollower'
+import { assertProxyablePort, describeRejection, parsePublishedPort, resolveProxyTarget, resolveServerPort, serverOrigins } from './scripts/lib/devServerPort'
 import { parseEnvFile } from './server/utils/launch-env.mjs'
 
 // `.env` as the launcher's parser sees it — the same `dotenv.parse` the server's
@@ -89,6 +90,46 @@ if (PROXY_TARGET.source === 'published' && PROXY_TARGET.port !== PORT_RESOLUTION
 reportUnusablePortValues()
 const { http: SERVER_ORIGIN, ws: SERVER_WS_ORIGIN } = serverOrigins(PROXY_TARGET.port)
 
+// Following, continued — the reading above is only the one taken at startup
+// (#2995). `vite.config.ts` is evaluated once, so when the readiness wait ran
+// out of budget and Vite started against the merely-REQUESTED port, a backend
+// publishing a moment later was left unreachable for the rest of the session.
+// The proxy can be re-aimed per request; `scripts/lib/proxyTargetFollower.ts`
+// explains why that is a supported property and not a poke at internals.
+//
+// Polling rather than `fs.watch`: one small file once a second costs nothing,
+// and `fs.watch` is what `docs/windows-gotchas.md` says not to rely on.
+const TARGET_POLL_MS = 1000
+type Reaimable = { options: { target?: unknown } }
+const followedProxies: Array<{ proxy: Reaimable; origin: (port: number) => string }> = []
+
+/** Register a proxy instance so it is re-aimed when the backend moves. */
+function reaimable(origin: (port: number) => string) {
+  return (proxy: unknown): void => {
+    followedProxies.push({ proxy: proxy as Reaimable, origin })
+  }
+}
+const httpOrigin = (port: number): string => serverOrigins(port).http
+const wsOrigin = (port: number): string => serverOrigins(port).ws
+
+function followPublishedPort(server: { httpServer: { once: (event: string, cb: () => void) => void } | null }): void {
+  if (!FOLLOWS_PUBLISHED_PORT || followedProxies.length === 0) return
+  const follower = createProxyTargetFollower({
+    initialPort: PROXY_TARGET.port,
+    readPublished: readPublishedPort,
+    parsePort: parsePublishedPort,
+    onSwitch: (port) => {
+      followedProxies.forEach(({ proxy, origin }) => {
+        proxy.options.target = origin(port)
+      })
+      console.info(`[vite] backend moved to :${port} — proxy re-aimed`)
+    }
+  })
+  const timer = setInterval(() => follower.poll(), TARGET_POLL_MS)
+  timer.unref()
+  server.httpServer?.once('close', () => clearInterval(timer))
+}
+
 // `PORT=0` (or a whitespace-only PORT, which coerces to 0) leaves the backend on an
 // OS-assigned port that no proxy target can name, so the dev server must refuse to
 // start rather than quietly serve a page wired to whatever else is on :3001.
@@ -100,6 +141,15 @@ function proxyPortGuardPlugin(): Plugin {
     apply: 'serve',
     configResolved() {
       assertProxyablePort(PORT_RESOLUTION, PROXY_TARGET)
+    },
+    // RETURNED, not run inline. Vite calls plugin `configureServer` hooks first
+    // and installs the proxy middleware afterwards, so the instances do not
+    // exist yet at that point — an inline call registered nothing and the proxy
+    // never moved. The returned function is the post hook, which runs once the
+    // middlewares (and therefore every `configure`) are in place. Tied to the
+    // server so the poll stops with it rather than outliving what it followed.
+    configureServer(server) {
+      return () => followPublishedPort(server)
     }
   }
 }
@@ -390,13 +440,15 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: SERVER_ORIGIN,
-        changeOrigin: true
+        changeOrigin: true,
+        configure: reaimable(httpOrigin)
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/images', ...)).
       // Without this proxy, dev's Vite catch-all returns the SPA index.html instead.
       '/artifacts/images': {
         target: SERVER_ORIGIN,
-        changeOrigin: true
+        changeOrigin: true,
+        configure: reaimable(httpOrigin)
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/svg', ...)).
       // Same reason as `/artifacts/images`: `<img src="/artifacts/svg/...">` would
@@ -404,7 +456,8 @@ export default defineConfig({
       // body), which the browser silently fails to render as an image.
       '/artifacts/svg': {
         target: SERVER_ORIGIN,
-        changeOrigin: true
+        changeOrigin: true,
+        configure: reaimable(httpOrigin)
       },
       // Static-mount on the backend (server/index.ts: app.use('/artifacts/html', ...)).
       // Without this proxy, Vite's HTML transform injects `/@vite/client` and
@@ -422,7 +475,8 @@ export default defineConfig({
       '/artifacts/html': {
         target: SERVER_ORIGIN,
         changeOrigin: true,
-        xfwd: true
+        xfwd: true,
+        configure: reaimable(httpOrigin)
       },
       // Static-mount on the backend (server/index.ts: app.use(HTML_FILE_MOUNT, ...)),
       // serving a page presentHtml was pointed AT rather than one it wrote — the
@@ -438,11 +492,13 @@ export default defineConfig({
       '/htmlfile': {
         target: SERVER_ORIGIN,
         changeOrigin: true,
-        xfwd: true
+        xfwd: true,
+        configure: reaimable(httpOrigin)
       },
       '/ws': {
         target: SERVER_WS_ORIGIN,
-        ws: true
+        ws: true,
+        configure: reaimable(wsOrigin)
       }
     }
   }

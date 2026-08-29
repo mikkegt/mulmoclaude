@@ -273,9 +273,14 @@ async function waitOn(port: number, budgetMs: number, verified: boolean): Promis
   // be the claim this whole file exists to stop making: with the default port
   // busy, the thing that answered is the OTHER instance, and the backend we
   // started is still coming up somewhere else (Codex, #2981).
+  //
+  // Not a dead end any more, though: Vite keeps watching `.server-port` and
+  // re-aims itself when this run's backend finally publishes (#2995), so this
+  // is a "not yet", not a "restart to fix it".
   log(
     `:${port} is answering, but this startup never published a port, so nothing confirms that is the backend it started. ` +
-      `Vite will proxy here. If the UI shows another instance's data or 401s, restart \`yarn dev\` once the backend is up, or set PORT to give it a port of its own.`,
+      `Vite will proxy here for now and switch as soon as the backend publishes its own port. ` +
+      `If it never does, set PORT to give it a port of its own.`,
   );
 }
 
