@@ -52,9 +52,14 @@
 // The SHAPE is matched rather than a particular separator, because a
 // comma groups thousands in English and marks the decimal in most of
 // Europe, and a dot does the opposite (codex, #2985). `$1,5$` is one and
-// a half and typesets; `$1.000,50$` is a price and does not. `$1,500$`
-// is genuinely ambiguous and is read as the price — the reading rule 5
-// already had, which this narrowing keeps rather than reverses.
+// a half and typesets; `$1.000,50$` carries both a grouping AND a
+// decimal mark, which no one computes with, and does not.
+//
+// A number with ONE separator typesets whatever follows it. Reading
+// three digits after it as money cost every three-decimal constant a
+// maths article writes (`$3.141$`, `$1.414$`, `$2.718$`) and bought only
+// `$1,500$` — a shape currency prose never reaches, because rules 1-4
+// kill every realistic way of writing a price first (#2991).
 //
 // Rules 2-5 are enforced in the tokenizer, where the whole match is in
 // hand. Rule 1 needs the character BEFORE the match, which a marked
@@ -88,7 +93,6 @@ const DIGITS = /^\d+$/;
  *  and which one marks the decimal is exactly what cannot be known, so
  *  none of them is read as one or the other. */
 const NUMBER_SEPARATORS = /[.,\s]/;
-const THOUSAND = 3;
 
 /** A bare number written the way MONEY is written rather than the way a
  *  quantity is — `1,000`, `1.000`, `1 000`, `1.000,50`, `12,345,678`.
@@ -98,27 +102,35 @@ const THOUSAND = 3;
  *  and a dot does the opposite, so a rule that names one of them fails
  *  half the world's authors either way (codex, #2985).
  *
- *  Two separators or more is money — a quantity does not need them. One
- *  separator followed by exactly three digits is ambiguous, `$1,500$` as
- *  much as `$1.500$`, and is read as money: that is the reading rule 5
- *  already had, and the one this file is narrowing rather than
- *  reversing. Everything else — `10000`, `1`, `1,5`, `3.14159` — is a
- *  number, and a number in a maths article is maths.
+ *  Two separators or more is money: `1.000,50` groups AND marks a
+ *  decimal, which is a formatted amount rather than a quantity anyone
+ *  computes with.
  *
- *  A leading zero is NOT an exception, though it looks like one: a
- *  three-decimal sub-unit price is how fuel is priced (`$0.100` a litre),
- *  so `$0.100$` is as ambiguous as `$1.500$` and is read the same way
- *  (codex, #2985). Three digits after the separator is the whole test. */
+ *  ONE separator is not, whatever follows it. That branch used to read
+ *  "exactly three digits after it" as money, and the cost was every
+ *  three-decimal constant a maths article writes — `3.141`, `1.414`,
+ *  `2.718`, `1.618`, `0.577`, `6.022`, `9.807` all came out as literal
+ *  `$…$` in the prose (#2991). What it bought was `$1,500$`, and that
+ *  turns out to be a shape currency prose never reaches: every realistic
+ *  form dies earlier, at rules 1-4 —
+ *
+ *      `$1,000 と $2,000`      rule 3, whitespace before the close
+ *      `合計 $1,000から$500`    rule 3
+ *      `$1,000-$2,000`        rule 4, a digit after the close
+ *      `US$1,000`             rule 1, alphanumeric before the open
+ *      `価格は $1,000 です`      no closing `$` at all
+ *
+ *  — leaving only `$1,000$`, both delimiters written out. That is the
+ *  same shape this file already reads as maths for `$5$`: a person
+ *  quoting a price writes `$1,000`, and it is the DOUBLED delimiter that
+ *  makes it a formula. Rule 5 was applying one reading to `$5$` and the
+ *  opposite to `$1,500$`; now it applies the same one to both. */
 function isMoneyShaped(body: string): boolean {
   const runs = body.split(NUMBER_SEPARATORS);
   // Anything that is not digits-and-separators is not a written number at
   // all — `x=1` and `\pi` land here and are maths by this rule.
   if (!runs.every((run) => DIGITS.test(run))) return false;
-  if (runs.length === 1) return false;
-  if (runs.length > 2) return true;
-  const [, tail] = runs;
-  if (tail === undefined) return false;
-  return tail.length === THOUSAND;
+  return runs.length > 2;
 }
 /** The same set with the digits removed: a body of punctuation has
  *  nothing to typeset. */
