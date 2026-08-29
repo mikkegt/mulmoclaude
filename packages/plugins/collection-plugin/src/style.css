@@ -7,9 +7,9 @@
    `ring`) and emits utilities nothing asked for. */
 @source "../../../core/src/collection/core/enumColors.ts";
 
-/* Same shape, different file: IconGlyph renders inside this plugin's components
-   but lives in core, so its classes drop out of dist/style.css the same way
-   (#2988 added the component without the source). The host app has the whole
-   repository as its root and keeps rendering them, which is exactly why this
-   needs the `check:plugin-css` gate rather than an eye. */
+/* IconGlyph does the same thing one file over: it spells out the classes that
+   size and colour a collection's icon, and it lives in core rather than here
+   (#2986). Same reasoning as above, including naming the FILE — the gate in
+   `scripts/packages/check-plugin-tailwind-source.mjs` went red the moment the
+   two landed together. */
 @source "../../../core/src/plugin-vue/IconGlyph.ts";
