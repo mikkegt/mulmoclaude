@@ -742,10 +742,16 @@ export const StorageZ = z.discriminatedUnion("type", [
 const CollectionObjectZ = z.object({
   title: z.string().min(1),
   // Optional accent colour, drawn as a pale chip behind the launcher glyph so
-  // collections sharing a generic icon stay distinguishable (#2987). A name
-  // outside the palette is not rejected here — `accentChipClasses` returns null
-  // and the surface falls back to unstyled, the same fail-soft `icon` gets.
-  color: z.enum(ACCENT_COLORS).optional(),
+  // collections sharing a generic icon stay distinguishable (#2987).
+  //
+  // `.catch(undefined)` is load-bearing, not defensive dressing: discovery
+  // treats a schema that fails validation as NO COLLECTION AT ALL
+  // (`safeParse` fails -> `return null`, the row vanishes from every index).
+  // A bare `z.enum(...).optional()` would therefore make one mistyped colour
+  // cost the user their whole collection — a catastrophic price for a
+  // cosmetic field. Catching normalises the unknown value away instead: the
+  // key is dropped, the collection loads, and the launcher draws it unstyled.
+  color: z.enum(ACCENT_COLORS).optional().catch(undefined),
   // A Material Symbols ligature name, or a single emoji. Deliberately not
   // pattern-constrained: every renderer goes through `resolveIconGlyph`
   // (core/iconGlyph.ts), which decides which of the two a value is and cuts

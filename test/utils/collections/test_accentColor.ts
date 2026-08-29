@@ -11,6 +11,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { ACCENT_COLORS, accentChipClasses, isAccentColor, type AccentColor } from "@mulmoclaude/core/collection";
+// The zod contract is deliberately kept off the browser-safe barrel; discovery
+// reaches it through the server subpath, so the test asks the same question of
+// the same validator discovery actually runs.
+import { CollectionSchemaZ } from "@mulmoclaude/core/collection/server";
 
 describe("accentChipClasses — declared colours", () => {
   it("returns chip classes for every colour in the palette", () => {
@@ -82,5 +86,42 @@ describe("accentChipClasses — palette boundaries", () => {
   it("gives every colour a distinct chip", () => {
     const chips = ACCENT_COLORS.map((color: AccentColor) => accentChipClasses(color));
     assert.equal(new Set(chips).size, ACCENT_COLORS.length);
+  });
+});
+
+describe("schema.color — a bad colour must not cost the collection", () => {
+  // Discovery treats a schema that fails validation as NO COLLECTION AT ALL:
+  // `CollectionSchemaZ.safeParse` fails, `loadOneCollection` returns null, and
+  // the row disappears from every index. So the question for a COSMETIC field
+  // is not "is it rejected" but "what does rejecting it cost" — and the answer
+  // has to be "the colour", never "the collection".
+  const base = {
+    title: "Podcasts",
+    icon: "podcasts",
+    dataPath: "data/podcasts",
+    primaryKey: "id",
+    fields: { id: { type: "string", label: "ID", primary: true, required: true } },
+  };
+
+  it("keeps a colour the palette declares", () => {
+    ACCENT_COLORS.forEach((color) => {
+      const parsed = CollectionSchemaZ.safeParse({ ...base, color });
+      assert.equal(parsed.success, true, color);
+      assert.equal(parsed.success ? parsed.data.color : null, color, color);
+    });
+  });
+
+  it("still parses — and drops the value — when the colour is unknown", () => {
+    ["puce", "Violet", "", "red", 7, null, [], {}].forEach((color) => {
+      const parsed = CollectionSchemaZ.safeParse({ ...base, color });
+      assert.equal(parsed.success, true, `${JSON.stringify(color)} rejected the whole schema`);
+      assert.equal(parsed.success ? parsed.data.color : "unset", undefined, JSON.stringify(color));
+    });
+  });
+
+  it("parses a schema that names no colour at all", () => {
+    const parsed = CollectionSchemaZ.safeParse(base);
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.success ? parsed.data.color : "unset", undefined);
   });
 });
