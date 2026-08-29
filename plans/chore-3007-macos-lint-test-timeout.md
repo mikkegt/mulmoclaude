@@ -40,13 +40,18 @@ runner の速さ自体が日単位で動いている:
 
 ## `yarn.lock` を触る PR が特に危ない
 
-`lint_test` の 2 つのキャッシュはどちらもキーに `hashFiles('yarn.lock')` を含む:
+`lint_test` はロックファイルのハッシュをキーに含むキャッシュを 3 つ使うが、**依存更新 PR で
+実際にコールドになるのは 2 つだけ**。#3005 の macOS ジョブのログで確認した:
 
-- `Cache puppeteer browsers` — `puppeteer-${{ runner.os }}-${{ hashFiles('yarn.lock') }}`（`restore-keys` あり）
-- `Cache packages/dist` — キー末尾が `'yarn.lock', 'package.json'`（**`restore-keys` 無し**）
+| キャッシュ | キー | `restore-keys` | #3005 での結果 |
+|---|---|---|---|
+| setup-node の yarn キャッシュ (`cache: yarn`) | `node-cache-<OS>-<arch>-yarn-<lock ハッシュ>` | 無し | `yarn cache is not found` → **ミス** |
+| `Cache packages/dist` | 末尾に `'yarn.lock', 'package.json'` | **無し** | `Cache not found for input keys` → **ミス** |
+| `Cache puppeteer browsers` | `puppeteer-<OS>-<lock ハッシュ>` | `puppeteer-<OS>-` あり | `Cache hit for restore-key` → **ヒット（warm）** |
 
-依存更新 PR は必ず両方ミスし、cold install + cold build が上乗せされる。#3005（依存の
-バージョン上げのみ）で実際に出た差:
+つまり上乗せされるのは **cold install（setup-node のキャッシュ）と cold build:packages
+（`packages/dist`）の 2 つ**で、puppeteer の chrome 再ダウンロードは起きていない。
+#3005（依存のバージョン上げのみ）で実際に出た差:
 
 | ステップ | #3005 (macos 22.x) | 同日の main (macos 22.x) |
 |---|---:|---:|
@@ -57,7 +62,10 @@ runner の速さ自体が日単位で動いている:
 | `build` | 2m55s | 1m40s |
 | `test:coverage` | **2m08s で cancel** | 3m37s (pass) |
 
-全ステップが 1.5〜1.7 倍になっており、cold cache だけでなく runner 自体も遅い日だった。
+比較できる 5 ステップの倍率は **1.5〜3.5 倍**（install 3.5x / build:packages 2.0x /
+typecheck 1.9x / lint 1.5x / build 1.75x）。`test:coverage` は cancel されたので比較対象外。
+最大の install は cold cache で説明がつくが、キャッシュと無関係な typecheck・lint・build まで
+1.5〜1.9 倍になっているので、この日は runner 自体も遅かった。
 
 #2857 の調査で判明しているとおり、このリポジトリの Actions キャッシュは既に 10 GB の上限を
 超えて LRU 追い出しが起きているため、キャッシュヒット率自体も安定しない。
@@ -79,7 +87,8 @@ runner の速さ自体が日単位で動いている:
 ## やらないこと（独立した判断なので分ける）
 
 - **ジョブ本体の高速化**。`lint` が macOS で 4.7〜7.1 分と最大の項目で、短縮する価値はある。
-  `Cache packages/dist` に `restore-keys` を足せば依存更新 PR の cold build も減らせる。
+  `Cache packages/dist` に `restore-keys` を足せば依存更新 PR の cold build も減らせる
+  （puppeteer キャッシュが実際にそうやって warm を保っている）。
   どちらも上限引き上げとは独立に評価すべきなので別 issue にする。
 - `e2e` ジョブ（`timeout-minutes: 15`、実測 11m3s / 11m27s）。余裕 3.5 分でタイムアウト
   kill の実績も無いため今回は触らない。

@@ -71,11 +71,14 @@ jobs:
     # (ubuntu p90 13.9-15.5), and 5 of those runs had a macOS cell killed
     # at exactly 20 min while every ubuntu sibling passed. Runner speed
     # also drifts day to day - on 2026-08-28 the macOS median was 17.7.
-    # A lockfile-touching PR is worst: both caches below key on
-    # hashFiles('yarn.lock'), so a dep bump pays a cold install AND a cold
-    # build:packages (#3005 measured +3-4 min). Matches the 30 already used
-    # by the Windows sibling job. A cap is a runaway guard, not a perf
-    # budget - raising it costs nothing on a healthy run. (#3007)
+    # A lockfile-touching PR is the worst case: setup-node's yarn cache
+    # and the packages/dist cache below both key on the lockfile with no
+    # restore-key, so a dep bump pays a cold install AND a cold
+    # build:packages (#3005: 42s -> 2m26s and 1m11s -> 2m25s). The
+    # puppeteer cache has a restore-key and stays warm, so it is not part
+    # of this. 30 matches the Windows sibling job. A cap is a runaway
+    # guard, not a perf budget - raising it costs nothing on a healthy
+    # run. (#3007)
     timeout-minutes: 30
     strategy:
       fail-fast: false
