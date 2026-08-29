@@ -28,6 +28,15 @@ export interface IconGlyphProps {
    *  the CALL SITE, never defaulted to a value only this file names — see the
    *  note on containment below. */
   sizeClass?: string | undefined;
+  /** Which icon FONT resolves a ligature name. Defaults to Material Symbols,
+   *  what collections and feeds use. Roles are drawn in Material Icons — a
+   *  different set with its own name list — so those call sites pass
+   *  `"material-icons"` (#3003).
+   *
+   *  Only the font differs: both sets use exactly the charset `[0-9_a-z]`
+   *  (measured across all 3896 and 2122 shipped names), so `resolveIconGlyph`
+   *  answers "is this shaped like a name" identically for either. */
+  fontClass?: string | undefined;
   /** Accessible name for the glyph, on BOTH rendering paths. Pass the
    *  collection / feed title only where the surrounding control has no label
    *  of its own; where it does (a button with its own `aria-label`), leave
@@ -37,6 +46,7 @@ export interface IconGlyphProps {
 }
 
 const DEFAULT_SIZE_CLASS = "text-base";
+const DEFAULT_FONT_CLASS = "material-symbols-outlined";
 
 // Containment is an inline style, NOT Tailwind utilities, and that is
 // deliberate — the one place in this repo where a component may not use
@@ -90,7 +100,7 @@ export const IconGlyph: FunctionalComponent<IconGlyphProps> = (props): VNode => 
   const glyph = resolveIconGlyph(props.icon, props.fallback ?? DEFAULT_ICON);
   const labelling = labellingFor(props.ariaLabel);
   if (glyph.kind === "symbol") {
-    return h("span", { class: ["material-symbols-outlined", sizeClass], style: SYMBOL_CONTAINMENT, ...labelling }, glyph.name);
+    return h("span", { class: [props.fontClass ?? DEFAULT_FONT_CLASS, sizeClass], style: SYMBOL_CONTAINMENT, ...labelling }, glyph.name);
   }
   return h("span", { class: sizeClass, style: GLYPH_CONTAINMENT, ...labelling }, glyph.text);
 };
@@ -106,4 +116,5 @@ IconGlyph.props = {
   fallback: String,
   sizeClass: String,
   ariaLabel: String,
+  fontClass: String,
 };
