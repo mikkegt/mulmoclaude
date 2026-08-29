@@ -38,7 +38,9 @@
           class="flex items-center gap-2 px-3 py-1 text-sm text-gray-900"
           :data-testid="`shortcut-reorder-row-${shortcut.kind}-${shortcut.slug}`"
         >
-          <span class="text-gray-500 flex-none"><IconGlyph :icon="shortcut.icon" size-class="text-base" /></span>
+          <span class="h-6 w-6 rounded flex items-center justify-center flex-none" :class="accentChipClasses(shortcut.color) ?? 'text-gray-500'">
+            <IconGlyph :icon="shortcut.icon" size-class="text-base" />
+          </span>
           <span class="flex-1 truncate" :title="shortcut.title">{{ shortcut.title }}</span>
           <button
             type="button"
@@ -72,6 +74,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
+import { accentChipClasses } from "@mulmoclaude/core/collection";
 import { useShortcuts } from "../composables/useShortcuts";
 import { useClickOutside } from "../composables/useClickOutside";
 import type { MoveDirection } from "../composables/shortcutReorder";

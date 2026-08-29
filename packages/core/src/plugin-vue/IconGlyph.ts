@@ -44,10 +44,15 @@ const DEFAULT_SIZE_CLASS = "text-base";
 //
 // A utility class only exists if some Tailwind build SAW the literal. This
 // file is compiled into `@mulmoclaude/core`, and each consumer runs its own
-// Tailwind over its own sources: the host's build scans core's dist (verified
-// — `bg-lime-50`, declared only in core's `enumColors.ts`, reaches the host
+// Tailwind over its own sources: the host's build scans core (verified — the
+// enum palette's colours, declared only in `enumColors.ts`, do reach the host
 // CSS), but `collection-plugin`'s package build scans only the plugin's own
 // src, so a class named solely here is silently absent from its `dist/style.css`.
+//
+// No example class name is spelled out above, deliberately: `check:plugin-css`
+// tokenises this file as source, so a palette class quoted in a COMMENT reads to
+// it as one this component renders — and it then demands an `@source` for a
+// class nothing here draws.
 // A containment rule that evaporates in a packaged consumer leaves exactly the
 // overflow this component exists to prevent. An inline style cannot be tree-
 // shaken by a scanner and holds for every consumer, present and future.

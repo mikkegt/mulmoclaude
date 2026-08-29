@@ -198,7 +198,14 @@
                 </span>
               </div>
 
-              <component :is="pinToggle" kind="collection" :slug="collection.slug" :title="collection.title" :icon="collection.icon" />
+              <component
+                :is="pinToggle"
+                kind="collection"
+                :slug="collection.slug"
+                :title="collection.title"
+                :icon="collection.icon"
+                :color="collection.color"
+              />
 
               <!-- Contribute is meaningless for a dataSource collection: its
                  records are a machine-local file no registry bundle can carry
@@ -231,6 +238,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
+import { toShortcutInfo } from "@mulmoclaude/core/collection";
 import { useCollectionI18n } from "../lang";
 import { useCollectionUi } from "../scopedUi";
 import DiscoverPanel from "./DiscoverPanel.vue";
@@ -303,7 +311,7 @@ async function loadCollections(): Promise<void> {
   // titles/icons, self-heal the file. Feed shortcuts are left to FeedsView.
   void reconcileShortcuts(
     "collection",
-    collections.value.map((collection) => ({ slug: collection.slug, title: collection.title, icon: collection.icon })),
+    collections.value.map((collection) => toShortcutInfo(collection, "dataset")),
   );
 }
 

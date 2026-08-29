@@ -38,7 +38,9 @@
             @click="onTitleActivate($event, tile.slug)"
             @dblclick="openFull(tile.slug)"
           >
-            <span class="flex-none"><IconGlyph :icon="metaFor(tile.slug)?.icon" fallback="apps" size-class="text-base" /></span>
+            <span class="h-6 w-6 rounded flex items-center justify-center flex-none" :class="accentChipClasses(metaFor(tile.slug)?.color) ?? ''">
+              <IconGlyph :icon="metaFor(tile.slug)?.icon" fallback="apps" size-class="text-base" />
+            </span>
             <span class="truncate">{{ metaFor(tile.slug)?.title || tile.slug }}</span>
           </button>
           <select
@@ -86,6 +88,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { CollectionView, applicableViewModes, customViewKey, type CollectionViewMode } from "@mulmoclaude/collection-plugin/vue";
 import { IconGlyph } from "@mulmoclaude/core/plugin-vue";
+import { accentChipClasses } from "@mulmoclaude/core/collection";
 import { useShortcuts } from "../composables/useShortcuts";
 import { useDashboard } from "../composables/useDashboard";
 import { apiGet } from "../utils/api";
