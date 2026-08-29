@@ -14,7 +14,13 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
+import { once } from "node:events";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
+
+/** `server.close(cb)` as a promise, so teardown does not nest closures. */
+function closeQuietly(closable: { close: (cb: () => void) => void }): Promise<void> {
+  return new Promise((resolve) => closable.close(() => resolve()));
+}
 
 interface Backend {
   port: number;
@@ -32,7 +38,7 @@ async function startBackend(label: string): Promise<Backend> {
   assert.ok(address !== null && typeof address === "object", "expected a bound TCP address");
   return {
     port: address.port,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () => closeQuietly(server),
   };
 }
 
@@ -42,12 +48,14 @@ interface Reaimable {
   options: { target?: unknown };
 }
 
-async function whoAnswered(vitePort: number): Promise<string> {
-  const res = await fetch(`http://127.0.0.1:${vitePort}/api/who`);
+async function whoAnswered(port: number): Promise<string> {
+  const res = await fetch(`http://127.0.0.1:${port}/api/who`);
   const body: unknown = await res.json();
   assert.ok(typeof body === "object" && body !== null && "who" in body, "expected the backend's own answer");
   return String((body as { who: unknown }).who);
 }
+
+const WS_GREETING_TIMEOUT_MS = 5000;
 
 interface WsBackend {
   port: number;
@@ -64,10 +72,10 @@ async function startWsBackend(label: string): Promise<WsBackend> {
   assert.ok(address !== null && typeof address === "object", "expected a bound TCP address");
   return {
     port: address.port,
-    close: () =>
-      new Promise<void>((resolve) => {
-        wss.close(() => server.close(() => resolve()));
-      }),
+    close: async () => {
+      await closeQuietly(wss);
+      await closeQuietly(server);
+    },
   };
 }
 
@@ -77,24 +85,19 @@ function vitePort(server: ViteDevServer): number {
   return address.port;
 }
 
-/** Open one upgrade through Vite and read which backend answered. */
-function whoGreeted(port: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-    const timer = setTimeout(() => {
-      socket.close();
-      reject(new Error("no greeting through the proxied upgrade"));
-    }, 5000);
-    socket.on("message", (data: Buffer) => {
-      clearTimeout(timer);
-      socket.close();
-      resolve(data.toString());
-    });
-    socket.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
+/** Open one upgrade through Vite and read which backend answered.
+ *
+ *  `once` rather than hand-rolled handlers: it settles on the first `message`,
+ *  rejects on `error` by itself, and keeps this flat instead of nesting three
+ *  closures inside a Promise executor. */
+async function whoGreeted(port: number): Promise<string> {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  try {
+    const [data] = await once(socket, "message", { signal: AbortSignal.timeout(WS_GREETING_TIMEOUT_MS) });
+    return String(data);
+  } finally {
+    socket.close();
+  }
 }
 
 describe("a running Vite proxy can be re-aimed at another backend", () => {
