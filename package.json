@@ -22,6 +22,7 @@
     "audit:releases": "node scripts/packages/audit-releases.mjs",
     "check:changelog-ships": "node scripts/packages/check-changelog-ships.mjs",
     "check:doc-links": "node scripts/docs/check-doc-links.mjs",
+    "check:plugin-css": "node scripts/packages/check-plugin-tailwind-source.mjs",
     "knip": "knip",
     "wait:backend": "tsx scripts/wait-for-backend.ts",
     "predev": "yarn plugins:codegen",

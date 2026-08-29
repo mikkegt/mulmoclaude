@@ -1,1 +1,8 @@
 @import "tailwindcss";
+
+/* The enum palette spells its classes out in core, which this package's Vite root
+   does not cover — so they drop out of dist/style.css and only the host app, whose
+   root IS the repository, keeps rendering them (#2989). The FILE, not its directory:
+   scanning core/src harvests ordinary words out of the TypeScript (`contents`, `grow`,
+   `ring`) and emits utilities nothing asked for. */
+@source "../../../core/src/collection/core/enumColors.ts";
