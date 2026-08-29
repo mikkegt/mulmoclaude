@@ -82,6 +82,23 @@ test.describe("role icon containment", () => {
     expect(box.width).toBeLessThanOrEqual(box.height * 1.01);
   });
 
+  // Stack mode has its OWN two renderers (header + its mirror of the
+  // empty-state hero). They are a separate copy of the same markup, so the
+  // single-layout assertions above say nothing about them — losing the class
+  // in one layout and not the other is exactly the drift worth catching.
+  test("stack mode contains the same undeclared icon", async ({ page }) => {
+    // The toggle's testid names the CURRENT mode, so this one switches to stack.
+    await page.getByTestId("canvas-view-toggle-single").click();
+    await expect(page.getByTestId("stack-role-header")).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const icons = page.locator("span.material-icons").filter({ hasText: UNDECLARED_ICON });
+    const count = await icons.count();
+    expect(count).toBeGreaterThan(0);
+    const widths = await Promise.all(Array.from({ length: count }, (_unused, index) => widthInEm(icons.nth(index))));
+    widths.forEach((width) => expect(width).toBeLessThanOrEqual(1.01));
+  });
+
   test("a real icon name is untouched by the containment", async ({ page }) => {
     await page.route(
       (url) => url.pathname.endsWith("/api/roles"),
