@@ -284,10 +284,15 @@ describe("renderMathNodes — when nothing can be drawn", () => {
   });
 
   it("treats an undefined macro the same way", async () => {
+    // `AllPackages` pulls in `noundefined`, so MathJax draws the unknown
+    // control sequence as its own name rather than throwing. Assert the name
+    // reached the output: counting one <svg> alone would also pass if MathJax
+    // silently drew nothing (coderabbit, #2996).
     const host = inlineHost("\\nosuchmacro{x}");
     await renderMathNodes(host);
     assert.equal(host.querySelectorAll(".math-error").length, 0);
     assert.equal(host.querySelectorAll("svg").length, 1);
+    assert.match(host.textContent ?? "", /nosuchmacro/);
     host.remove();
   });
 
