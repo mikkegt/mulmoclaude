@@ -45,14 +45,20 @@ const FALLBACK_ICON = "smart_toy";
  *  touches a real icon and contains every miss. `em` rather than a fixed size
  *  because the callers range from `text-sm` to `text-5xl`.
  *
- *  Every span rendering THIS function's result carries it: `App.vue` (the
- *  empty-session hero), `RoleSelector.vue` (trigger + each option) and
- *  `SessionRoleIcon.vue`. The roles MANAGEMENT screen
- *  (`plugins/manageRoles/View.vue`, `Preview.vue`) deliberately does NOT — it
- *  renders the RAW `role.icon` so you can see what you typed, emoji included,
- *  and an emoji is 1.25em, so this cap would crop it. Bounding that screen
- *  needs the classify-then-render treatment `collection/core/iconGlyph.ts`
- *  uses, not this. */
+ *  All SEVEN spans that render this function's result carry it — the value
+ *  travels as a prop, so grepping for the call site alone finds four of them:
+ *    · `App.vue` (empty-session hero, text-5xl)
+ *    · `StackView.vue` ×2 (stack-mode header + its mirror of that hero)
+ *    · `SessionSidebar.vue` (sidebar header)
+ *    · `RoleSelector.vue` ×2 (trigger + each option)
+ *    · `SessionRoleIcon.vue` (session tabs / history)
+ *
+ *  The three RAW `role.icon` renderers are deliberately NOT in that list
+ *  (`plugins/manageRoles/View.vue`, `plugins/manageRoles/Preview.vue`,
+ *  `components/RolesView.vue`): those screens bypass this function to show
+ *  what you actually typed, emoji included, and an emoji is 1.25em — this cap
+ *  would crop it. Bounding them needs the classify-then-render treatment in
+ *  `collection/core/iconGlyph.ts`, not this. */
 export const ROLE_ICON_CONTAINMENT = "inline-block w-[1em] overflow-hidden";
 
 export function roleIcon(roles: Role[], roleId: string): string {
