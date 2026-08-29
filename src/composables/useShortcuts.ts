@@ -14,6 +14,7 @@ import { createMutationQueue } from "../utils/mutationQueue";
 import { sameShortcut, type Shortcut, type ShortcutKind } from "../types/shortcuts";
 import type { CollectionShortcutInfo } from "@mulmoclaude/core/collection";
 import { moveShortcutByIdentity, type MoveDirection } from "./shortcutReorder";
+import { hasShortcutDrifted, refreshShortcut } from "./shortcutRefresh";
 
 const shortcuts = ref<Shortcut[]>([]);
 const loadError = ref<string | null>(null);
@@ -120,12 +121,6 @@ function movePinned(kind: ShortcutKind, slug: string, direction: MoveDirection):
   });
 }
 
-/** `{ color }` when there is one, `{}` when there is not — so a shortcut whose
- *  collection dropped its colour loses the key rather than persisting a null. */
-function withColor(color: string | undefined): { color?: string } {
-  return color === undefined ? {} : { color };
-}
-
 /** Bulk reconcile one kind against the authoritative
  *  `{slug,title,icon,color}` list an index just fetched: prune dead slugs,
  *  refresh survivors' title/icon/colour. If anything drifted, PUT the
@@ -144,12 +139,9 @@ function reconcile(kind: ShortcutKind, live: CollectionShortcutInfo[]): Promise<
         drifted = true; // dead slug — prune
         return [];
       }
-      if (fresh.title !== entry.title || fresh.icon !== entry.icon || fresh.color !== entry.color) {
+      if (hasShortcutDrifted(entry, fresh)) {
         drifted = true; // stale label / colour — refresh
-        // `color` is spread rather than assigned so a collection that DROPPED
-        // its colour loses the key entirely; assigning `undefined` would leave
-        // `"color": undefined` to be written out as a null by JSON.stringify.
-        return [{ ...entry, title: fresh.title, icon: fresh.icon, ...withColor(fresh.color) }];
+        return [refreshShortcut(entry, fresh)];
       }
       return [entry];
     });
