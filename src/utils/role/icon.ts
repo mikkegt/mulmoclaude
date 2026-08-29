@@ -58,7 +58,7 @@ const FALLBACK_ICON = "smart_toy";
  *  `components/RolesView.vue`): those screens bypass this function to show
  *  what you actually typed, emoji included, and an emoji is 1.25em — this cap
  *  would crop it. Bounding them needs the classify-then-render treatment in
- *  `collection/core/iconGlyph.ts`, not this. */
+ *  `collection/core/iconGlyph.ts`, not this — tracked in #3003. */
 export const ROLE_ICON_CONTAINMENT = "inline-block w-[1em] overflow-hidden";
 
 export function roleIcon(roles: Role[], roleId: string): string {
