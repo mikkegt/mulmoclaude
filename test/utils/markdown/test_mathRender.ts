@@ -18,7 +18,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { Marked } from "marked";
-import { mathExtension } from "@mulmoclaude/markdown-utils/markdown/mathExtension";
+import { mathExtension, mathPlaceholder } from "@mulmoclaude/markdown-utils/markdown/mathExtension";
 
 const SOURCE = [
   "牛丼は $100 と $200 です。US$5 too.",
@@ -225,5 +225,74 @@ describe("renderMathNodes — host hardening pass", () => {
     assert.equal(host.querySelectorAll(".math-error").length, 0);
     assert.ok(host.querySelectorAll("path").length > 0);
     host.remove();
+  });
+});
+
+// The paths where a formula does NOT come out. The suite above pins what
+// the pipeline keeps out (`javascript:`) and what it draws; these pin
+// what it does when drawing fails — which is the half a host author
+// meets first, because the hardener they write is what breaks it.
+describe("renderMathNodes — 描けなかったとき", () => {
+  const inlineHost = (tex: string): HTMLElement => {
+    const host = document.createElement("div");
+    host.innerHTML = mathPlaceholder(tex, { display: false, block: false });
+    document.body.appendChild(host);
+    return host;
+  };
+
+  it("hardener が <svg> を落としたら、ソース付きの error box に置き換える", async () => {
+    // `MathHardener` の doc が「消すと壊れる」と名指ししている2つのうちの
+    // 一方。ホストが自分のポリシーを書くとき最初に踏む落とし穴なので、
+    // 契約が doc だけでなくテストにもある状態にする。
+    const host = inlineHost("x^2");
+    await renderMathNodes(host, undefined, () => "<span>svg を落とすポリシー</span>");
+
+    const box = host.querySelector(".math-error");
+    assert.ok(box, "error box に置き換わること");
+    assert.equal(host.querySelectorAll("svg").length, 0);
+    // どの式が壊れたか著者に見えること。
+    assert.match(box.textContent ?? "", /x\^2/);
+    host.remove();
+  });
+
+  it("error box は placeholder ごと置き換える — pending が残らない", async () => {
+    // 残ると次の `renderMathNodes` が同じ式をもう一度組もうとする。
+    const host = inlineHost("y^2");
+    await renderMathNodes(host, undefined, () => "<span>no svg</span>");
+    assert.equal(host.querySelectorAll("[data-math-pending]").length, 0);
+
+    const afterFirst = host.innerHTML;
+    await renderMathNodes(host, undefined, () => "<span>no svg</span>");
+    assert.equal(host.innerHTML, afterFirst, "2回目は何もしない");
+    host.remove();
+  });
+
+  it("壊れた TeX は error box ではなく MathJax 自身のエラー字形になる", async () => {
+    // 直感に反するので固定しておく。MathJax は例外を投げず、エラーを
+    // 描いた SVG を返すため `renderOne` の catch には入らない。既存の
+    // テストは `.math-error` が 0 件であることしか見ておらず、この
+    // 読み方はどこにも書かれていなかった。MathJax が将来投げるように
+    // なれば、ここが最初に赤くなる。
+    const host = inlineHost("\\frac{");
+    await renderMathNodes(host);
+
+    assert.equal(host.querySelectorAll(".math-error").length, 0);
+    assert.equal(host.querySelectorAll("svg").length, 1);
+    assert.match(host.textContent ?? "", /Missing close brace/);
+    host.remove();
+  });
+
+  it("未定義マクロも同じ扱い", async () => {
+    const host = inlineHost("\\nosuchmacro{x}");
+    await renderMathNodes(host);
+    assert.equal(host.querySelectorAll(".math-error").length, 0);
+    assert.equal(host.querySelectorAll("svg").length, 1);
+    host.remove();
+  });
+
+  it("root が無いときは何もせず返る", async () => {
+    // 呼び出し側は Vue の ref を渡すので、マウント前は null になりうる。
+    await assert.doesNotReject(renderMathNodes(null));
+    await assert.doesNotReject(renderMathNodes(undefined));
   });
 });
