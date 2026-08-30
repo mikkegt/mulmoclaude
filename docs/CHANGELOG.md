@@ -8,7 +8,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions use [Se
 
 ## [Unreleased]
 
+---
+
+## [1.15.0] - 2026-08-30
+
+**TeX math in the markdown preview, and icons that no longer overlap their neighbour.**
+
+### Fixed
+
+#### An emoji icon rendered at the icon font's metrics and overlapped the button beside it (#2986, PR #2988; #3003, PR #3006)
+
+A `schema.icon` that is not a Material Symbols name — an emoji, most often — was handed to the
+icon font anyway. The font drew it at its own metrics, which pushed the glyph outside its box
+and over whatever sat next to it. Icons are now classified before anything renders them:
+`iconGlyph.ts` decides what a given string *is*, and the shared `IconGlyph` component is the one
+path every surface goes through — the collections index, the collection header, the related
+menu, action buttons, feeds, the roles screen and the launcher's shortcut rail.
+
+Emoji are supported deliberately rather than by accident, the icon-font path carries a11y
+attributes, a blank fallback no longer leaves an empty glyph, and the containment that keeps an
+oversized glyph inside its box no longer depends on the build configuration. Two Tailwind
+`@source` directives were needed alongside it (#2989, PR #2994): the classes that size and
+colour a glyph are spelled out in `@mulmoclaude/core`, which the collection plugin's Vite root
+does not cover, so they fell out of the plugin's own stylesheet and only the host app kept
+rendering them.
+
+#### The dev client proxied to a port the backend was not on (#2975, PR #2977; #2981, PR #2982; #2995, PR #2997)
+
+`yarn dev` starts two panes with no ordering guarantee, and the backend does not always get the
+port `PORT` asked for — a busy default makes it walk forward. The client half derived its proxy
+target from `PORT` regardless, so whenever the request could not be honoured the two addressed
+different ports and the UI sat on "Can't reach the backend".
+
+The wait now FOLLOWS the port the backend published rather than the one it was asked for, and
+Vite re-aims itself when a late publish arrives. `.server-port` is cleared before either pane
+starts so a leftover file from a dead run cannot be mistaken for this startup's, and it is
+written atomically — a reader arriving between the truncate and the write used to see an empty
+file, and one arriving mid-write could see `3002` cut to `300`, which parses as a perfectly
+valid port nothing is listening on. `PORT=0` is usable now: the OS-assigned port was unknowable
+when Vite evaluated its config, and it is knowable once the backend binds it and says so.
+
+#### A write could lose its rename on a loaded Windows runner (#2972, PR #2974)
+
+`writeFileAtomic` retried a Windows rename for about 430 ms. That was not enough under
+contention: the notifier's `active.json` write threw, and the listener waiting on it timed out
+ten seconds later — while the contention it was retrying through had long since cleared. The
+async ladder now runs to about four seconds, because waiting there is nearly free: the call
+yields. The synchronous ladder deliberately stays at 430 ms, since `sleepSync` parks the whole
+thread and a longer budget would not delay one write, it would freeze the process.
+
 ### Added
+
+#### Collections and feeds carry an accent colour (#2987, PR #2998)
+
+A collection or feed can name an accent colour, which the launcher draws as a pale ground
+behind its pinned shortcut. The colour survives a reload, and an invalid one falls back
+instead of taking the whole collection down with it.
 
 #### TeX math in the markdown preview
 
