@@ -2,6 +2,16 @@
 
 Newest first. Each entry corresponds to a tagged release. Written in English.
 
+## @mulmoclaude/collection-plugin@4.5.0 — 2026-08-30
+
+Routes every icon in the plugin through core's new `IconGlyph` (#2986, #3003), and requires `@mulmoclaude/core@4.5.0` to do it — the component did not exist before that release.
+
+- `CollectionHeader.vue`, `CollectionMutateParamsModal.vue`, `CollectionRecordPanel.vue`, `CollectionToolbar.vue`, `CollectionViewConfigModal.vue`, `CollectionsIndexView.vue`, `DiscoverPanel.vue` and `FeedsView.vue` replace their bare `<span class="material-symbols-outlined">{{ icon }}</span>` with `<IconGlyph :icon="…" size-class="…" />`. The visible difference is that a non-Material icon — an emoji — is now classified and drawn at the right metrics instead of being handed to the icon font and overlapping its neighbour.
+- The collection's accent colour is passed down where the header previously dropped it (`:color="collection.color"`).
+- `src/style.css` gains two `@source` directives. The enum palette and `IconGlyph` both spell their Tailwind classes out inside **core**, which this package's Vite root does not cover, so those utilities fell out of `dist/style.css` and only the host app — whose root is the repository — kept rendering them (#2989). Both directives name the FILE rather than the directory on purpose: scanning `core/src` harvests ordinary words out of the TypeScript (`contents`, `grow`, `ring`) and emits utilities nothing asked for. `scripts/packages/check-plugin-tailwind-source.mjs` is the gate that went red when the two landed together.
+
+📦 **npm**: [`@mulmoclaude/collection-plugin@4.5.0`](https://www.npmjs.com/package/@mulmoclaude/collection-plugin/v/4.5.0)
+
 ## @mulmoclaude/collection-plugin@4.4.0 — 2026-08-26
 
 The app's standard search box now drives a custom collection view (#2959, PR #2963).
